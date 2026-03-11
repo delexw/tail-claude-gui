@@ -1,5 +1,5 @@
 {
-  "productName": "tail-claude",
+  "productName": "tail-claude-gui",
   "version": "0.1.0",
   "identifier": "com.tailclaude.gui",
   "build": {
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "tail-claude",
+        "title": "tail-claude-gui",
         "width": 1200,
         "height": 800,
         "minWidth": 600,

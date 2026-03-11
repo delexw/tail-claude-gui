@@ -1,5 +1,5 @@
 [default]
-description = "Default permissions for all tail-claude commands"
+description = "Default permissions for all tail-claude-gui commands"
 permissions = [
   "allow-discover-sessions",
   "allow-load-session",

@@ -2145,10 +2145,10 @@
       "description": "Permission identifier",
       "oneOf": [
         {
-          "description": "Default permissions for all tail-claude commands\n#### This default permission set includes:\n\n- `allow-discover-sessions`\n- `allow-load-session`\n- `allow-get-session-meta`\n- `allow-watch-session`\n- `allow-unwatch-session`\n- `allow-get-git-info`\n- `allow-get-debug-log`\n- `allow-watch-picker`\n- `allow-unwatch-picker`\n- `allow-get-project-dirs`",
+          "description": "Default permissions for all tail-claude-gui commands\n#### This default permission set includes:\n\n- `allow-discover-sessions`\n- `allow-load-session`\n- `allow-get-session-meta`\n- `allow-watch-session`\n- `allow-unwatch-session`\n- `allow-get-git-info`\n- `allow-get-debug-log`\n- `allow-watch-picker`\n- `allow-unwatch-picker`\n- `allow-get-project-dirs`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for all tail-claude commands\n#### This default permission set includes:\n\n- `allow-discover-sessions`\n- `allow-load-session`\n- `allow-get-session-meta`\n- `allow-watch-session`\n- `allow-unwatch-session`\n- `allow-get-git-info`\n- `allow-get-debug-log`\n- `allow-watch-picker`\n- `allow-unwatch-picker`\n- `allow-get-project-dirs`"
+          "markdownDescription": "Default permissions for all tail-claude-gui commands\n#### This default permission set includes:\n\n- `allow-discover-sessions`\n- `allow-load-session`\n- `allow-get-session-meta`\n- `allow-watch-session`\n- `allow-unwatch-session`\n- `allow-get-git-info`\n- `allow-get-debug-log`\n- `allow-watch-picker`\n- `allow-unwatch-picker`\n- `allow-get-project-dirs`"
         },
         {
           "description": "Allow discovering sessions across project directories",

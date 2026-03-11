@@ -1,6 +1,6 @@
 {
   "identifier": "default",
-  "description": "Default permissions for tail-claude GUI",
+  "description": "Default permissions for tail-claude-gui",
   "windows": ["main"],
   "permissions": [
     "core:default",
