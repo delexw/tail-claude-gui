@@ -97,7 +97,7 @@ export function SessionPicker({
                 <div
                   key={session.path}
                   ref={isSelected ? selectedRef : undefined}
-                  className={`picker__session${isSelected ? " picker__session--selected" : ""}`}
+                  className={`picker__session${isSelected ? " picker__session--selected" : ""}${session.is_ongoing ? " picker__session--ongoing" : ""}`}
                   onMouseEnter={() => onSelectIndex?.(idx)}
                   onClick={() => onSelect(session)}
                 >
@@ -110,7 +110,8 @@ export function SessionPicker({
                     </span>
                     {session.is_ongoing && (
                       <span className="picker__session-ongoing">
-                        {spinnerFrames[animFrame % spinnerFrames.length]} active
+                        <span className="picker__session-ongoing-dot" />
+                        ACTIVE
                       </span>
                     )}
                   </div>

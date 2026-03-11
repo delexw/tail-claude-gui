@@ -1,8 +1,11 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use super::session::{discover_project_sessions_with_scan, SessionInfo};
+
+/// Ongoing sessions older than this are considered stale.
+const ONGOING_STALENESS: Duration = Duration::from_secs(120);
 
 /// Per-file cache entry keyed by (modTime, size).
 struct CachedFile {
@@ -37,7 +40,17 @@ impl SessionCache {
         let mut cache = self.file_cache.lock().unwrap();
         if let Some(cached) = cache.get(path) {
             if cached.mod_time == mod_time && cached.size == size {
-                return Some(cached.info.clone());
+                let mut info = cached.info.clone();
+                // Re-check staleness for ongoing sessions at read time
+                if info.is_ongoing {
+                    let elapsed = SystemTime::now()
+                        .duration_since(mod_time)
+                        .unwrap_or_default();
+                    if elapsed > ONGOING_STALENESS {
+                        info.is_ongoing = false;
+                    }
+                }
+                return Some(info);
             }
         }
 

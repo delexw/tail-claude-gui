@@ -469,6 +469,16 @@ body {
   border-left-color: var(--accent);
 }
 
+.picker__session--ongoing {
+  border-left-color: var(--ongoing);
+  background: rgba(95, 175, 0, 0.06);
+}
+
+.picker__session--ongoing.picker__session--selected {
+  border-left-color: var(--ongoing);
+  background: rgba(95, 175, 0, 0.12);
+}
+
 .picker__session-top {
   display: flex;
   align-items: center;
@@ -485,9 +495,25 @@ body {
 }
 
 .picker__session-ongoing {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px;
+  border-radius: 3px;
+  background: rgba(95, 175, 0, 0.2);
   color: var(--ongoing);
   font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
   flex-shrink: 0;
+}
+
+.picker__session-ongoing-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ongoing);
+  animation: pulse 1.5s ease-in-out infinite;
 }
 
 .picker__session-meta {

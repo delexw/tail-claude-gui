@@ -3,6 +3,22 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { SessionInfo } from "../types";
 
+/** Sessions inactive for longer than this are no longer "ongoing". */
+const ONGOING_STALENESS_MS = 120_000;
+
+/** Clear is_ongoing for sessions whose mod_time is stale. */
+function clearStaleSessions(sessions: SessionInfo[]): SessionInfo[] {
+  const now = Date.now();
+  return sessions.map((s) => {
+    if (!s.is_ongoing) return s;
+    const modMs = new Date(s.mod_time).getTime();
+    if (isNaN(modMs) || now - modMs > ONGOING_STALENESS_MS) {
+      return { ...s, is_ongoing: false };
+    }
+    return s;
+  });
+}
+
 interface PickerState {
   sessions: SessionInfo[];
   loading: boolean;
@@ -24,7 +40,7 @@ export function usePicker() {
       const sessions = await invoke<SessionInfo[]>("discover_sessions", {
         projectDirs,
       });
-      setState((prev) => ({ ...prev, sessions, loading: false }));
+      setState((prev) => ({ ...prev, sessions: clearStaleSessions(sessions), loading: false }));
 
       // Start watching for new sessions
       try {
@@ -53,7 +69,7 @@ export function usePicker() {
           if (cancelled) return;
           setState((prev) => ({
             ...prev,
-            sessions: event.payload.sessions,
+            sessions: clearStaleSessions(event.payload.sessions),
           }));
         }
       );
@@ -72,6 +88,21 @@ export function usePicker() {
       unlistenRef.current?.();
       unlistenRef.current = null;
     };
+  }, []);
+
+  // Periodic staleness check — clear "ACTIVE" even if no file events fire
+  useEffect(() => {
+    const id = setInterval(() => {
+      setState((prev) => {
+        const updated = clearStaleSessions(prev.sessions);
+        // Only update if something actually changed
+        if (updated === prev.sessions || updated.every((s, i) => s === prev.sessions[i])) {
+          return prev;
+        }
+        return { ...prev, sessions: updated };
+      });
+    }, 10_000);
+    return () => clearInterval(id);
   }, []);
 
   // Cleanup on unmount
