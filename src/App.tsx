@@ -11,6 +11,7 @@ import { DebugViewer } from "./components/DebugViewer";
 import { InfoBar } from "./components/InfoBar";
 import { KeybindBar } from "./components/KeybindBar";
 import { ViewToolbar } from "./components/ViewToolbar";
+import { ProjectTree } from "./components/ProjectTree";
 
 export function App() {
   const [view, setView] = useState<ViewState>("picker");
@@ -19,6 +20,16 @@ export function App() {
   const [pickerSelectedIndex, setPickerSelectedIndex] = useState(0);
   const [showKeybinds, setShowKeybinds] = useState(true);
   const [animFrame, setAnimFrame] = useState(0);
+  const [selectedProject, setSelectedProject] = useState<string | null>(null);
+
+  const handleSelectProject = useCallback(
+    (project: string | null) => {
+      setSelectedProject(project);
+      setPickerSelectedIndex(0);
+      if (view !== "picker") setView("picker");
+    },
+    [view],
+  );
 
   const session = useSession();
   const picker = usePicker();
@@ -324,13 +335,18 @@ export function App() {
     keybindActions["back"] = () => setView("list");
   }
 
+  // Filter sessions by selected project
+  const filteredByProject = selectedProject
+    ? picker.sessions.filter((s) => s.path.includes(`/.claude/projects/${selectedProject}/`))
+    : picker.sessions;
+
   // Render the active view
   const renderView = () => {
     switch (view) {
       case "picker":
         return (
           <SessionPicker
-            sessions={picker.sessions}
+            sessions={filteredByProject}
             loading={picker.loading}
             searchQuery={picker.searchQuery}
             selectedIndex={pickerSelectedIndex}
@@ -404,6 +420,11 @@ export function App() {
       />
 
       <div className="app-body">
+        <ProjectTree
+          sessions={picker.allSessions}
+          selectedProject={selectedProject}
+          onSelectProject={handleSelectProject}
+        />
         <div className="main-content">{renderView()}</div>
       </div>
 

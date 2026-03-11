@@ -126,6 +126,87 @@ body {
   overflow: hidden;
 }
 
+/* ---- Project Tree Sidebar ---- */
+
+.project-tree {
+  width: 200px;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.project-tree__header {
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--dim);
+  border-bottom: 1px solid var(--border);
+}
+
+.project-tree__list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.project-tree__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--fg);
+  border-left: 2px solid transparent;
+}
+
+.project-tree__item:hover {
+  background: var(--hover);
+}
+
+.project-tree__item--selected {
+  background: var(--hover);
+  border-left-color: var(--accent);
+  color: var(--accent);
+}
+
+.project-tree__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.project-tree__meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: 6px;
+}
+
+.project-tree__count {
+  font-size: 10px;
+  color: var(--dim);
+  background: var(--border);
+  padding: 0 5px;
+  border-radius: 8px;
+  line-height: 16px;
+}
+
+.project-tree__ongoing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ongoing);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
 /* ---- Info Bar ---- */
 
 .info-bar {
