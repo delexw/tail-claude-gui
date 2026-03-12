@@ -887,6 +887,13 @@ body {
 .message__role-icon {
   font-size: 14px;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+}
+
+.message__claude-icon {
+  width: 14px;
+  height: 14px;
 }
 
 .message__role {
@@ -1208,6 +1215,13 @@ body {
 .detail-item__icon {
   font-size: 13px;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+}
+
+.detail-item__claude-icon {
+  width: 13px;
+  height: 13px;
 }
 
 .detail-item__name {

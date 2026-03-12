@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Claude } from "@thesvg/react";
 import ReactMarkdown from "react-markdown";
 import type { DisplayItem } from "../types";
 import { formatTokens, formatDuration, formatJson, firstLine, truncate } from "../lib/format";
@@ -258,7 +259,7 @@ function DetailItemBody({ item }: { item: DisplayItem }) {
   }
 }
 
-export function getItemIcon(item: DisplayItem): string {
+export function getItemIcon(item: DisplayItem): React.ReactNode {
   switch (item.item_type) {
     case "Thinking":
       return "\u{1F4A1}";
@@ -267,9 +268,9 @@ export function getItemIcon(item: DisplayItem): string {
     case "ToolCall":
       return item.tool_error ? "\u26A0" : (toolCategoryIcons[item.tool_category] ?? "\u{1F527}");
     case "Subagent":
-      return "\u{1F916}";
+      return <Claude className="detail-item__claude-icon" />;
     case "TeammateMessage":
-      return "\u{1F916}";
+      return <Claude className="detail-item__claude-icon" />;
     case "HookEvent":
       return "\u{1FA9D}";
     default:

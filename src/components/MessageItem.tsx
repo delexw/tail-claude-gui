@@ -1,3 +1,4 @@
+import { Claude } from "@thesvg/react";
 import type { DisplayMessage } from "../types";
 import { shortModel, formatExactTime, firstLine, truncate } from "../lib/format";
 import { getModelColor } from "../lib/theme";
@@ -49,13 +50,15 @@ export function MessageItem({
     >
       <div className="message__header">
         <span className="message__role-icon">
-          {msg.role === "user"
-            ? "\u{1F464}"
-            : msg.role === "claude"
-              ? "\u{1F916}"
-              : msg.is_error
-                ? "\u26A0"
-                : "\u{1F4BB}"}
+          {msg.role === "claude" ? (
+            <Claude className="message__claude-icon" />
+          ) : msg.role === "user" ? (
+            "\u{1F464}"
+          ) : msg.is_error ? (
+            "\u26A0"
+          ) : (
+            "\u{1F4BB}"
+          )}
         </span>
         <span
           className={`message__role message__role--${msg.role === "claude" ? "claude" : msg.role === "user" ? "user" : "system"}`}

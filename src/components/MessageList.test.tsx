@@ -77,7 +77,7 @@ describe("MessageList", () => {
     ];
     render(<MessageList {...defaultProps({ messages })} />);
     expect(screen.getByText("User")).toBeInTheDocument();
-    expect(screen.getByText("Claude")).toBeInTheDocument();
+    expect(screen.getByText("Claude", { selector: ".message__role" })).toBeInTheDocument();
     expect(screen.getByText("System")).toBeInTheDocument();
   });
 
