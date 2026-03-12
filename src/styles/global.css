@@ -816,6 +816,7 @@ body {
 .message {
   padding: 8px 16px;
   border-left: 3px solid transparent;
+  border-bottom: 1px solid var(--border);
   cursor: pointer;
   transition: background 0.1s;
 }

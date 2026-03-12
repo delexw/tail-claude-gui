@@ -1,9 +1,8 @@
 import { useRef, useCallback, useMemo } from "react";
 import { useScrollToSelected } from "../hooks/useScrollToSelected";
 import type { DisplayMessage } from "../types";
-import { shortModel, formatExactTime, firstLine, truncate } from "../lib/format";
-import { getModelColor, spinnerFrames } from "../lib/theme";
-import { StatsBar, statsFromMessage } from "./StatsBar";
+import { spinnerFrames } from "../lib/theme";
+import { MessageItem } from "./MessageItem";
 
 interface MessageListProps {
   messages: DisplayMessage[];
@@ -40,13 +39,6 @@ export function MessageList({
     [selectedIndex, onSelect, onToggle],
   );
 
-  const handleDoubleClick = useCallback(
-    (index: number) => {
-      onOpenDetail(index);
-    },
-    [onOpenDetail],
-  );
-
   // Chronological order: oldest messages first
   const ordered = useMemo(() => {
     const indices: number[] = [];
@@ -73,7 +65,6 @@ export function MessageList({
         }
 
         const isSelected = i === selectedIndex;
-        const isExpanded = expandedSet.has(i);
         const isFirst = i === 0;
 
         return (
@@ -83,11 +74,16 @@ export function MessageList({
             message={msg}
             index={i}
             isSelected={isSelected}
-            isExpanded={isExpanded}
-            isLastOngoing={isFirst && ongoing}
-            animFrame={animFrame}
+            isExpanded={expandedSet.has(i)}
             onClick={handleClick}
-            onDoubleClick={handleDoubleClick}
+            onOpenDetail={onOpenDetail}
+            headerExtra={
+              isFirst && ongoing ? (
+                <span className="message__ongoing-spinner">
+                  {spinnerFrames[animFrame % spinnerFrames.length]}
+                </span>
+              ) : undefined
+            }
           />
         );
       })}
@@ -103,104 +99,6 @@ function CompactSeparator({ content }: { content: string }) {
         <span>{content}</span>
         <span className="compact-separator__rule" />
       </div>
-    </div>
-  );
-}
-
-interface MessageItemProps {
-  message: DisplayMessage;
-  index: number;
-  isSelected: boolean;
-  isExpanded: boolean;
-  isLastOngoing: boolean;
-  animFrame: number;
-  onClick: (index: number) => void;
-  onDoubleClick: (index: number) => void;
-  ref?: React.Ref<HTMLDivElement>;
-}
-
-function MessageItem({
-  ref,
-  message: msg,
-  index,
-  isSelected,
-  isExpanded,
-  isLastOngoing,
-  animFrame,
-  onClick,
-  onDoubleClick,
-}: MessageItemProps) {
-  const roleClass =
-    msg.role === "user"
-      ? "message--user"
-      : msg.role === "claude"
-        ? "message--claude"
-        : msg.is_error
-          ? "message--system-error"
-          : "message--system";
-
-  const model = msg.model ? shortModel(msg.model) : "";
-  const modelColor = msg.model ? getModelColor(msg.model) : undefined;
-  const time = formatExactTime(msg.timestamp);
-
-  const contentPreview = isExpanded ? msg.content : truncate(firstLine(msg.content), 200);
-
-  const stats = statsFromMessage(msg);
-
-  return (
-    <div
-      ref={ref}
-      className={`message ${roleClass}${isSelected ? " message--selected" : ""}`}
-      onClick={() => onClick(index)}
-      onDoubleClick={() => onDoubleClick(index)}
-    >
-      <div className="message__header">
-        <span className="message__role-icon">
-          {msg.role === "user"
-            ? "\u{1F464}"
-            : msg.role === "claude"
-              ? "\u{1F916}"
-              : msg.is_error
-                ? "\u26A0"
-                : "\u{1F4BB}"}
-        </span>
-        <span
-          className={`message__role message__role--${msg.role === "claude" ? "claude" : msg.role === "user" ? "user" : "system"}`}
-        >
-          {msg.role === "user" ? "User" : msg.role === "claude" ? "Claude" : "System"}
-        </span>
-        {model && (
-          <span className="message__model" style={{ color: modelColor }}>
-            {model}
-          </span>
-        )}
-        {msg.subagent_label && (
-          <span className="detail-item__subagent-badge">{msg.subagent_label}</span>
-        )}
-        {time && <span className="message__timestamp">{time}</span>}
-        {isLastOngoing && (
-          <span className="message__ongoing-spinner">
-            {spinnerFrames[animFrame % spinnerFrames.length]}
-          </span>
-        )}
-        {(msg.items.length > 0 || msg.tool_call_count > 0 || msg.thinking_count > 0) && (
-          <button
-            className="message__detail-btn"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDoubleClick(index);
-            }}
-          >
-            Detail {"\u2192"}
-          </button>
-        )}
-      </div>
-
-      <div className={`message__content${!isExpanded ? " message__content--collapsed" : ""}`}>
-        {contentPreview}
-      </div>
-
-      <StatsBar stats={stats} />
     </div>
   );
 }
