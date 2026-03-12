@@ -120,7 +120,7 @@ export function DebugViewer({ entries, onBack }: DebugViewerProps) {
           const hasExtra = !!entry.extra;
 
           return (
-            <div key={`${entry.line_num}-${idx}`}>
+            <div key={entry.line_num}>
               <div
                 ref={isSelected ? selectedRef : null}
                 className={`debug-entry${isSelected ? " debug-entry--selected" : ""}`}

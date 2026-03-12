@@ -13,49 +13,33 @@ pub enum ToolCategory {
     Task,
     Tool,
     Web,
+    Cron,
     Other,
 }
 
 /// CategorizeToolName maps a raw tool name to a ToolCategory.
 pub fn categorize_tool_name(name: &str) -> ToolCategory {
     match name {
-        // Claude Code tools
+        // Claude Code core tools
         "Read" => ToolCategory::Read,
         "Edit" => ToolCategory::Edit,
         "Write" | "NotebookEdit" => ToolCategory::Write,
         "Bash" => ToolCategory::Bash,
         "Grep" => ToolCategory::Grep,
         "Glob" => ToolCategory::Glob,
-        "Task" | "Agent" => ToolCategory::Task,
-        "Skill" => ToolCategory::Tool,
+        "Task" | "Agent" | "TaskCreate" | "TaskUpdate" | "TaskList" | "TaskGet" | "TaskStop"
+        | "TaskOutput" => ToolCategory::Task,
+        "TeamCreate" | "TeamDelete" | "SendMessage" => ToolCategory::Task,
+        "Skill"
+        | "ToolSearch"
+        | "LSP"
+        | "TodoWrite"
+        | "AskUserQuestion"
+        | "ListMcpResourcesTool"
+        | "ReadMcpResourceTool" => ToolCategory::Tool,
+        "EnterPlanMode" | "ExitPlanMode" | "EnterWorktree" | "ExitWorktree" => ToolCategory::Tool,
         "WebFetch" | "WebSearch" => ToolCategory::Web,
-
-        // Codex tools
-        "shell_command" | "exec_command" | "write_stdin" | "shell" => ToolCategory::Bash,
-        "apply_patch" => ToolCategory::Edit,
-
-        // Gemini tools
-        "read_file" => ToolCategory::Read,
-        "write_file" | "edit_file" => ToolCategory::Write,
-        "run_command" | "execute_command" => ToolCategory::Bash,
-        "search_files" | "grep" => ToolCategory::Grep,
-
-        // OpenCode tools (lowercase variants)
-        "read" => ToolCategory::Read,
-        "edit" => ToolCategory::Edit,
-        "write" => ToolCategory::Write,
-        "bash" => ToolCategory::Bash,
-        "glob" => ToolCategory::Glob,
-        "task" => ToolCategory::Task,
-
-        // Copilot tools
-        "view" => ToolCategory::Read,
-        "report_intent" => ToolCategory::Tool,
-
-        // Cursor tools
-        "Shell" => ToolCategory::Bash,
-        "StrReplace" => ToolCategory::Edit,
-        "LS" => ToolCategory::Read,
+        "CronCreate" | "CronDelete" | "CronList" => ToolCategory::Cron,
 
         _ => ToolCategory::Other,
     }
@@ -66,7 +50,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn claude_code_tools() {
+    fn claude_code_core_tools() {
         assert_eq!(categorize_tool_name("Read"), ToolCategory::Read);
         assert_eq!(categorize_tool_name("Edit"), ToolCategory::Edit);
         assert_eq!(categorize_tool_name("Write"), ToolCategory::Write);
@@ -82,46 +66,43 @@ mod tests {
     }
 
     #[test]
-    fn codex_tools() {
-        assert_eq!(categorize_tool_name("shell_command"), ToolCategory::Bash);
-        assert_eq!(categorize_tool_name("exec_command"), ToolCategory::Bash);
-        assert_eq!(categorize_tool_name("write_stdin"), ToolCategory::Bash);
-        assert_eq!(categorize_tool_name("shell"), ToolCategory::Bash);
-        assert_eq!(categorize_tool_name("apply_patch"), ToolCategory::Edit);
+    fn claude_code_task_and_team_tools() {
+        assert_eq!(categorize_tool_name("TaskCreate"), ToolCategory::Task);
+        assert_eq!(categorize_tool_name("TaskUpdate"), ToolCategory::Task);
+        assert_eq!(categorize_tool_name("TaskList"), ToolCategory::Task);
+        assert_eq!(categorize_tool_name("TaskGet"), ToolCategory::Task);
+        assert_eq!(categorize_tool_name("TaskStop"), ToolCategory::Task);
+        assert_eq!(categorize_tool_name("TaskOutput"), ToolCategory::Task);
+        assert_eq!(categorize_tool_name("TeamCreate"), ToolCategory::Task);
+        assert_eq!(categorize_tool_name("TeamDelete"), ToolCategory::Task);
+        assert_eq!(categorize_tool_name("SendMessage"), ToolCategory::Task);
     }
 
     #[test]
-    fn gemini_tools() {
-        assert_eq!(categorize_tool_name("read_file"), ToolCategory::Read);
-        assert_eq!(categorize_tool_name("write_file"), ToolCategory::Write);
-        assert_eq!(categorize_tool_name("edit_file"), ToolCategory::Write);
-        assert_eq!(categorize_tool_name("run_command"), ToolCategory::Bash);
-        assert_eq!(categorize_tool_name("execute_command"), ToolCategory::Bash);
-        assert_eq!(categorize_tool_name("search_files"), ToolCategory::Grep);
-        assert_eq!(categorize_tool_name("grep"), ToolCategory::Grep);
+    fn claude_code_utility_tools() {
+        assert_eq!(categorize_tool_name("ToolSearch"), ToolCategory::Tool);
+        assert_eq!(categorize_tool_name("LSP"), ToolCategory::Tool);
+        assert_eq!(categorize_tool_name("TodoWrite"), ToolCategory::Tool);
+        assert_eq!(categorize_tool_name("AskUserQuestion"), ToolCategory::Tool);
+        assert_eq!(
+            categorize_tool_name("ListMcpResourcesTool"),
+            ToolCategory::Tool
+        );
+        assert_eq!(
+            categorize_tool_name("ReadMcpResourceTool"),
+            ToolCategory::Tool
+        );
+        assert_eq!(categorize_tool_name("EnterPlanMode"), ToolCategory::Tool);
+        assert_eq!(categorize_tool_name("ExitPlanMode"), ToolCategory::Tool);
+        assert_eq!(categorize_tool_name("EnterWorktree"), ToolCategory::Tool);
+        assert_eq!(categorize_tool_name("ExitWorktree"), ToolCategory::Tool);
     }
 
     #[test]
-    fn opencode_tools() {
-        assert_eq!(categorize_tool_name("read"), ToolCategory::Read);
-        assert_eq!(categorize_tool_name("edit"), ToolCategory::Edit);
-        assert_eq!(categorize_tool_name("write"), ToolCategory::Write);
-        assert_eq!(categorize_tool_name("bash"), ToolCategory::Bash);
-        assert_eq!(categorize_tool_name("glob"), ToolCategory::Glob);
-        assert_eq!(categorize_tool_name("task"), ToolCategory::Task);
-    }
-
-    #[test]
-    fn copilot_tools() {
-        assert_eq!(categorize_tool_name("view"), ToolCategory::Read);
-        assert_eq!(categorize_tool_name("report_intent"), ToolCategory::Tool);
-    }
-
-    #[test]
-    fn cursor_tools() {
-        assert_eq!(categorize_tool_name("Shell"), ToolCategory::Bash);
-        assert_eq!(categorize_tool_name("StrReplace"), ToolCategory::Edit);
-        assert_eq!(categorize_tool_name("LS"), ToolCategory::Read);
+    fn claude_code_cron_tools() {
+        assert_eq!(categorize_tool_name("CronCreate"), ToolCategory::Cron);
+        assert_eq!(categorize_tool_name("CronDelete"), ToolCategory::Cron);
+        assert_eq!(categorize_tool_name("CronList"), ToolCategory::Cron);
     }
 
     #[test]

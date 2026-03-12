@@ -170,6 +170,7 @@ describe("toolCategoryIcons", () => {
       "Task",
       "Tool",
       "Web",
+      "Cron",
       "Other",
     ];
     for (const key of expectedKeys) {

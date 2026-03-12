@@ -50,6 +50,7 @@ pub enum ClassifiedMsg {
     System(SystemMsg),
     Teammate(TeammateMsg),
     Compact(CompactMsg),
+    Hook(HookMsg),
 }
 
 #[derive(Debug, Clone)]
@@ -93,6 +94,14 @@ pub struct CompactMsg {
     pub text: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct HookMsg {
+    pub timestamp: DateTime<Utc>,
+    pub hook_event: String,
+    pub hook_name: String,
+    pub command: String,
+}
+
 pub const SYSTEM_OUTPUT_TAGS: &[&str] = &[
     LOCAL_COMMAND_STDERR_TAG,
     LOCAL_COMMAND_STDOUT_TAG,
@@ -134,6 +143,35 @@ pub fn classify(e: Entry) -> Option<ClassifiedMsg> {
     }
 
     let ts = parse_timestamp(&e.timestamp);
+
+    // Rescue hook_progress from noise filter before discarding all "progress" entries.
+    if e.entry_type == "progress" {
+        if let Some(ref data) = e.data {
+            if data.get("type").and_then(|v| v.as_str()) == Some("hook_progress") {
+                let hook_event = data
+                    .get("hookEvent")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let hook_name = data
+                    .get("hookName")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let command = data
+                    .get("command")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                return Some(ClassifiedMsg::Hook(HookMsg {
+                    timestamp: ts,
+                    hook_event,
+                    hook_name,
+                    command,
+                }));
+            }
+        }
+    }
 
     // Hard noise: structural metadata types.
     if NOISE_ENTRY_TYPES.contains(&e.entry_type.as_str()) {

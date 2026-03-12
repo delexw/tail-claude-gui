@@ -233,68 +233,72 @@ describe("shortMode", () => {
 // ---------------------------------------------------------------------------
 // contextPercent
 // ---------------------------------------------------------------------------
-describe("contextPercent", () => {
-  function makeMsg(role: DisplayMessage["role"], context_tokens: number): DisplayMessage {
-    return {
-      role,
-      model: "",
-      content: "",
-      timestamp: "",
-      thinking_count: 0,
-      tool_call_count: 0,
-      output_count: 0,
-      tokens_raw: 0,
-      input_tokens: 0,
-      output_tokens: 0,
-      cache_read_tokens: 0,
-      cache_creation_tokens: 0,
-      context_tokens,
-      duration_ms: 0,
-      items: [],
-      last_output: null,
-      is_error: false,
-      teammate_spawns: 0,
-      teammate_messages: 0,
-      subagent_label: "",
-    };
-  }
+function makeContextMsg(role: DisplayMessage["role"], context_tokens: number): DisplayMessage {
+  return {
+    role,
+    model: "",
+    content: "",
+    timestamp: "",
+    thinking_count: 0,
+    tool_call_count: 0,
+    output_count: 0,
+    tokens_raw: 0,
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_tokens: 0,
+    cache_creation_tokens: 0,
+    context_tokens,
+    duration_ms: 0,
+    items: [],
+    last_output: null,
+    is_error: false,
+    teammate_spawns: 0,
+    teammate_messages: 0,
+    subagent_label: "",
+  };
+}
 
+describe("contextPercent", () => {
   it("returns -1 for empty messages", () => {
     expect(contextPercent([])).toBe(-1);
   });
 
   it("returns -1 when no claude messages have context_tokens", () => {
-    const msgs = [makeMsg("user", 0), makeMsg("claude", 0)];
+    const msgs = [makeContextMsg("user", 0), makeContextMsg("claude", 0)];
     expect(contextPercent(msgs)).toBe(-1);
   });
 
   it("finds the last claude message with context_tokens", () => {
-    const msgs = [makeMsg("claude", 50_000), makeMsg("user", 0), makeMsg("claude", 100_000)];
+    const msgs = [
+      makeContextMsg("claude", 50_000),
+      makeContextMsg("user", 0),
+      makeContextMsg("claude", 100_000),
+    ];
     // 100_000 / 200_000 = 50%
     expect(contextPercent(msgs)).toBe(50);
   });
 
   it("skips non-claude messages", () => {
     const msgs = [
-      makeMsg("claude", 60_000),
-      makeMsg("user", 150_000), // user messages should be skipped
+      makeContextMsg("claude", 60_000),
+      makeContextMsg("user", 150_000), // user messages should be skipped
     ];
     expect(contextPercent(msgs)).toBe(30); // 60_000 / 200_000 = 30%
   });
 
   it("caps at 100%", () => {
-    const msgs = [makeMsg("claude", 250_000)];
+    const msgs = [makeContextMsg("claude", 250_000)];
     expect(contextPercent(msgs)).toBe(100);
   });
 
   it("floors the percentage", () => {
     // 1_000 / 200_000 = 0.5% -> floors to 0
-    const msgs = [makeMsg("claude", 1_000)];
+    const msgs = [makeContextMsg("claude", 1_000)];
     expect(contextPercent(msgs)).toBe(0);
   });
 
   it("returns correct value for full context", () => {
-    const msgs = [makeMsg("claude", 200_000)];
+    const msgs = [makeContextMsg("claude", 200_000)];
     expect(contextPercent(msgs)).toBe(100);
   });
 });

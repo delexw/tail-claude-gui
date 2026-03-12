@@ -28,7 +28,7 @@ export function TeamBoard({ teams, onBack }: TeamBoardProps) {
   return (
     <div className="team-board">
       {activeTeams.map((team, teamIdx) => (
-        <div key={teamIdx}>
+        <div key={team.name || `team-${team.description}`}>
           <div className="team-board__header">
             {teamIdx === 0 && <BackButton onClick={onBack} />}
             <div className="team-board__title">{team.name || "Team"}</div>

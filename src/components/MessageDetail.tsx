@@ -271,7 +271,7 @@ export function MessageDetail({ message: msg, onBack }: MessageDetailProps) {
                 <div className="detail-items__section-label">Items ({msg.items.length})</div>
                 {msg.items.map((item, idx) => (
                   <DetailItem
-                    key={idx}
+                    key={`${item.item_type}-${item.tool_name}-${item.tool_summary}-${item.duration_ms}`}
                     ref={idx === selectedItem ? scrollRef : undefined}
                     item={item}
                     index={idx}
@@ -624,7 +624,7 @@ function AgentDetailColumn({
                 <div className="detail-items__section-label">Items ({msg.items.length})</div>
                 {msg.items.map((di, idx) => (
                   <DetailItem
-                    key={idx}
+                    key={`${di.item_type}-${di.tool_name}-${di.tool_summary}-${di.duration_ms}`}
                     ref={idx === selectedItem ? scrollRef : undefined}
                     item={di}
                     index={idx}
@@ -994,6 +994,27 @@ function DetailItemBody({ item }: { item: DisplayItem }) {
           <div className="detail-item__text">{item.text}</div>
         </div>
       );
+    case "HookEvent":
+      return (
+        <div className="detail-item__body">
+          <div className="detail-item__section">
+            <div className="detail-item__section-title">Hook</div>
+            <div className="detail-item__text detail-item__text--mono">
+              {item.hook_event}: {item.hook_name}
+            </div>
+          </div>
+          {item.hook_command && (
+            <div className="detail-item__section">
+              <div className="detail-item__section-title">Command</div>
+              <div className="detail-item__json">
+                <pre>
+                  <code>{item.hook_command}</code>
+                </pre>
+              </div>
+            </div>
+          )}
+        </div>
+      );
     default:
       return (
         <div className="detail-item__body">
@@ -1015,6 +1036,8 @@ function getItemIcon(item: DisplayItem): string {
       return "\u{1F916}";
     case "TeammateMessage":
       return "\u{1F916}";
+    case "HookEvent":
+      return "\u{1FA9D}";
     default:
       return "\u2022";
   }
@@ -1032,6 +1055,8 @@ function getItemName(item: DisplayItem): string {
       return item.subagent_type || "Subagent";
     case "TeammateMessage":
       return item.team_member_name || "Teammate";
+    case "HookEvent":
+      return item.hook_event || "Hook";
     default:
       return item.item_type;
   }
@@ -1046,9 +1071,17 @@ function getItemSummary(item: DisplayItem): string {
     case "TeammateMessage":
       return item.text ? item.text.slice(0, 100) : "";
     case "Thinking":
-      return item.text ? item.text.slice(0, 80) + (item.text.length > 80 ? "\u2026" : "") : "Content not recorded";
+      return item.text
+        ? item.text.slice(0, 80) + (item.text.length > 80 ? "\u2026" : "")
+        : "Content not recorded";
     case "Output":
       return item.text ? item.text.slice(0, 80) + (item.text.length > 80 ? "\u2026" : "") : "";
+    case "HookEvent":
+      return item.hook_name
+        ? `${item.hook_name}${item.hook_command ? ": " + truncate(item.hook_command, 60) : ""}`
+        : item.hook_command
+          ? truncate(item.hook_command, 80)
+          : "";
     default:
       return "";
   }

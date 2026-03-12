@@ -119,7 +119,7 @@ pub fn is_ongoing(chunks: &[Chunk]) -> bool {
                         act_idx += 1;
                     }
                 }
-                DisplayItemType::TeammateMessage => {}
+                DisplayItemType::TeammateMessage | DisplayItemType::HookEvent => {}
             }
         }
     }

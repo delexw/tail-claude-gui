@@ -23,7 +23,13 @@ export interface DisplayMessage {
   subagent_label: string;
 }
 
-export type DisplayItemType = "Thinking" | "Output" | "ToolCall" | "Subagent" | "TeammateMessage";
+export type DisplayItemType =
+  | "Thinking"
+  | "Output"
+  | "ToolCall"
+  | "Subagent"
+  | "TeammateMessage"
+  | "HookEvent";
 
 export interface DisplayItem {
   item_type: DisplayItemType;
@@ -44,6 +50,9 @@ export interface DisplayItem {
   subagent_ongoing: boolean;
   agent_id: string;
   subagent_messages: DisplayMessage[];
+  hook_event: string;
+  hook_name: string;
+  hook_command: string;
 }
 
 export interface LastOutput {

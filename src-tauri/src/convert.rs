@@ -35,6 +35,9 @@ pub struct FrontendDisplayItem {
     pub subagent_ongoing: bool,
     pub agent_id: String,
     pub subagent_messages: Vec<DisplayMessage>,
+    pub hook_event: String,
+    pub hook_name: String,
+    pub hook_command: String,
 }
 
 /// Frontend last output.
@@ -141,6 +144,7 @@ fn display_item_type_str(t: &DisplayItemType) -> &'static str {
         DisplayItemType::ToolCall => "ToolCall",
         DisplayItemType::Subagent => "Subagent",
         DisplayItemType::TeammateMessage => "TeammateMessage",
+        DisplayItemType::HookEvent => "HookEvent",
     }
 }
 
@@ -155,6 +159,7 @@ fn tool_category_str(c: &ToolCategory) -> &'static str {
         ToolCategory::Task => "Task",
         ToolCategory::Tool => "Tool",
         ToolCategory::Web => "Web",
+        ToolCategory::Cron => "Cron",
         ToolCategory::Other => "Other",
     }
 }
@@ -233,6 +238,9 @@ fn convert_display_items(
                 subagent_ongoing: false,
                 agent_id: String::new(),
                 subagent_messages: Vec::new(),
+                hook_event: it.hook_event.clone(),
+                hook_name: it.hook_name.clone(),
+                hook_command: it.hook_command.clone(),
             };
 
             // Link subagent process if available (Subagent items and ToolCall items like Skill).
@@ -465,6 +473,7 @@ mod tests {
         assert_eq!(tool_category_str(&ToolCategory::Task), "Task");
         assert_eq!(tool_category_str(&ToolCategory::Tool), "Tool");
         assert_eq!(tool_category_str(&ToolCategory::Web), "Web");
+        assert_eq!(tool_category_str(&ToolCategory::Cron), "Cron");
         assert_eq!(tool_category_str(&ToolCategory::Other), "Other");
     }
 
@@ -488,6 +497,10 @@ mod tests {
         assert_eq!(
             display_item_type_str(&DisplayItemType::TeammateMessage),
             "TeammateMessage"
+        );
+        assert_eq!(
+            display_item_type_str(&DisplayItemType::HookEvent),
+            "HookEvent"
         );
     }
 

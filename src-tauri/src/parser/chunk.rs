@@ -17,6 +17,7 @@ pub enum DisplayItemType {
     ToolCall,
     Subagent,
     TeammateMessage,
+    HookEvent,
 }
 
 /// DisplayItem is a structured element within an AI chunk's detail view.
@@ -38,6 +39,9 @@ pub struct DisplayItem {
     pub team_member_name: String,
     pub teammate_id: String,
     pub teammate_color: String,
+    pub hook_event: String,
+    pub hook_name: String,
+    pub hook_command: String,
 }
 
 impl Default for DisplayItem {
@@ -59,6 +63,9 @@ impl Default for DisplayItem {
             team_member_name: String::new(),
             teammate_id: String::new(),
             teammate_color: String::new(),
+            hook_event: String::new(),
+            hook_name: String::new(),
+            hook_command: String::new(),
         }
     }
 }
@@ -170,6 +177,26 @@ pub fn build_chunks(msgs: &[ClassifiedMsg]) -> Vec<Chunk> {
                         stop_reason: String::new(),
                         is_meta: true,
                     }
+                });
+            }
+            ClassifiedMsg::Hook(m) => {
+                // Fold hook events into the AI buffer as synthetic AIMsg with a hook block.
+                ai_buf.push(AIMsg {
+                    timestamp: m.timestamp,
+                    model: String::new(),
+                    text: String::new(),
+                    thinking_count: 0,
+                    tool_calls: Vec::new(),
+                    blocks: vec![ContentBlock {
+                        block_type: "hook_event".to_string(),
+                        text: m.command.clone(),
+                        tool_name: m.hook_name.clone(),
+                        tool_id: m.hook_event.clone(),
+                        ..Default::default()
+                    }],
+                    usage: Usage::default(),
+                    stop_reason: String::new(),
+                    is_meta: true,
                 });
             }
             ClassifiedMsg::Compact(m) => {
@@ -313,6 +340,15 @@ fn merge_ai_buffer(buf: &[AIMsg]) -> Chunk {
                             teammate_id: b.teammate_id.clone(),
                             teammate_color: b.teammate_color.clone(),
                             token_count: b.text.len() / 4,
+                            ..Default::default()
+                        });
+                    }
+                    "hook_event" => {
+                        items.push(DisplayItem {
+                            item_type: DisplayItemType::HookEvent,
+                            hook_event: b.tool_id.clone(),
+                            hook_name: b.tool_name.clone(),
+                            hook_command: b.text.clone(),
                             ..Default::default()
                         });
                     }

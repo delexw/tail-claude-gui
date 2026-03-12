@@ -28,6 +28,17 @@ pub fn tool_summary(name: &str, input: &Option<Value>) -> String {
         "TaskUpdate" => summary_task_update(fields),
         "SendMessage" => summary_send_message(fields),
         "ToolSearch" => summary_tool_search(fields),
+        "CronCreate" => summary_cron_create(fields),
+        "CronDelete" => summary_cron_delete(fields),
+        "CronList" => "List scheduled jobs".to_string(),
+        "TaskList" => "List tasks".to_string(),
+        "TaskGet" => summary_task_get(fields),
+        "TaskStop" => summary_task_stop(fields),
+        "TaskOutput" => summary_task_output(fields),
+        "TeamCreate" => summary_team_create(fields),
+        "TeamDelete" => summary_team_delete(fields),
+        "AskUserQuestion" => summary_ask_user(fields),
+        "EnterPlanMode" | "ExitPlanMode" | "EnterWorktree" | "ExitWorktree" => name.to_string(),
         _ => summary_default(name, fields),
     }
 }
@@ -274,6 +285,85 @@ fn summary_tool_search(f: &serde_json::Map<String, Value>) -> String {
         return "ToolSearch".to_string();
     }
     truncate(q, 50)
+}
+
+fn summary_cron_create(f: &serde_json::Map<String, Value>) -> String {
+    let prompt = get_str(f, "prompt");
+    let cron = get_str(f, "cron");
+    if !prompt.is_empty() && !cron.is_empty() {
+        return format!("{} ({})", truncate(prompt, 40), cron);
+    }
+    if !prompt.is_empty() {
+        return truncate(prompt, 50);
+    }
+    if !cron.is_empty() {
+        return cron.to_string();
+    }
+    "Create cron job".to_string()
+}
+
+fn summary_cron_delete(f: &serde_json::Map<String, Value>) -> String {
+    let id = get_str(f, "id");
+    if !id.is_empty() {
+        return format!("Delete job {id}");
+    }
+    "Delete cron job".to_string()
+}
+
+fn summary_task_get(f: &serde_json::Map<String, Value>) -> String {
+    let id = get_str(f, "taskId");
+    if !id.is_empty() {
+        return format!("Get task #{id}");
+    }
+    "Get task".to_string()
+}
+
+fn summary_task_stop(f: &serde_json::Map<String, Value>) -> String {
+    let id = get_str(f, "taskId");
+    if !id.is_empty() {
+        return format!("Stop task #{id}");
+    }
+    "Stop task".to_string()
+}
+
+fn summary_task_output(f: &serde_json::Map<String, Value>) -> String {
+    let id = get_str(f, "taskId");
+    if !id.is_empty() {
+        return format!("Output of #{id}");
+    }
+    "Task output".to_string()
+}
+
+fn summary_team_create(f: &serde_json::Map<String, Value>) -> String {
+    let name = get_str(f, "name");
+    if !name.is_empty() {
+        return truncate(name, 50);
+    }
+    "Create team".to_string()
+}
+
+fn summary_team_delete(f: &serde_json::Map<String, Value>) -> String {
+    let name = get_str(f, "name");
+    if !name.is_empty() {
+        return format!("Delete {name}");
+    }
+    "Delete team".to_string()
+}
+
+fn summary_ask_user(f: &serde_json::Map<String, Value>) -> String {
+    if let Some(Value::Array(questions)) = f.get("questions") {
+        if let Some(Value::Object(q)) = questions.first() {
+            let header = q.get("header").and_then(|v| v.as_str()).unwrap_or("");
+            let question = q.get("question").and_then(|v| v.as_str()).unwrap_or("");
+            if !header.is_empty() {
+                return truncate(header, 50);
+            }
+            if !question.is_empty() {
+                return truncate(question, 50);
+            }
+        }
+    }
+    "Ask user".to_string()
 }
 
 fn summary_default(name: &str, f: &serde_json::Map<String, Value>) -> String {

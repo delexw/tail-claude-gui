@@ -101,6 +101,7 @@ export const toolCategoryIcons: Record<string, string> = {
   Task: "\u{1F916}",
   Tool: "\u{1F527}",
   Web: "\u{1F310}",
+  Cron: "\u{23F0}",
   Other: "\u{1F527}",
 };
 

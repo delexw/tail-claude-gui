@@ -37,6 +37,8 @@ pub struct Entry {
     pub team_name: String,
     #[serde(default, rename = "agentName")]
     pub agent_name: String,
+    #[serde(default)]
+    pub data: Option<Value>,
 }
 
 #[derive(Debug, Deserialize, Default)]
