@@ -33,6 +33,8 @@ pub struct FrontendDisplayItem {
     pub teammate_id: String,
     pub team_color: String,
     pub subagent_ongoing: bool,
+    pub agent_id: String,
+    pub subagent_messages: Vec<DisplayMessage>,
 }
 
 /// Frontend last output.
@@ -226,15 +228,22 @@ fn convert_display_items(
                 teammate_id: it.teammate_id.clone(),
                 team_color: it.teammate_color.clone(),
                 subagent_ongoing: false,
+                agent_id: String::new(),
+                subagent_messages: Vec::new(),
             };
 
             // Link subagent process if available.
             if it.item_type == DisplayItemType::Subagent {
                 if let Some(proc) = proc_by_task_id.get(it.tool_id.as_str()) {
                     fdi.subagent_ongoing = is_subagent_ongoing(proc);
+                    fdi.agent_id = proc.id.clone();
                     if !proc.teammate_color.is_empty() {
                         fdi.team_color = proc.teammate_color.clone();
                     }
+                    // Convert subagent's chunks into nested messages.
+                    let empty_procs: Vec<SubagentProcess> = Vec::new();
+                    let empty_colors: HashMap<String, String> = HashMap::new();
+                    fdi.subagent_messages = chunks_to_messages(&proc.chunks, &empty_procs, &empty_colors);
                 }
                 // Fallback: apply team color from toolUseResult data.
                 if fdi.team_color.is_empty() {

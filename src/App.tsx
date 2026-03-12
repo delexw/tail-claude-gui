@@ -72,6 +72,18 @@ export function App() {
     discover();
   }, [discoverSessions]);
 
+  // Manual refresh
+  const refreshSessions = useCallback(async () => {
+    try {
+      const dirs = await invoke<string[]>("get_project_dirs");
+      if (dirs.length > 0) {
+        discoverSessions(dirs);
+      }
+    } catch (err) {
+      console.error("Failed to refresh sessions:", err);
+    }
+  }, [discoverSessions]);
+
   // Handle session selection from picker
   const handleSelectSession = useCallback(
     (sessionInfo: SessionInfo) => {
@@ -300,6 +312,8 @@ export function App() {
           sessions={picker.allSessions}
           selectedProject={selectedProject}
           onSelectProject={handleSelectProject}
+          onRefresh={refreshSessions}
+          refreshing={picker.loading}
         />
         <div className="main-content">{renderView()}</div>
       </div>

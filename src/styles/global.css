@@ -139,6 +139,9 @@ body {
 }
 
 .project-tree__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 8px 12px;
   font-size: 11px;
   font-weight: 700;
@@ -146,6 +149,32 @@ body {
   letter-spacing: 0.5px;
   color: var(--dim);
   border-bottom: 1px solid var(--border);
+}
+
+.project-tree__refresh {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  line-height: 1;
+  transition: color 0.15s;
+}
+
+.project-tree__refresh:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.project-tree__refresh--spinning {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .project-tree__list {
@@ -842,6 +871,10 @@ body {
   color: var(--token-high);
 }
 
+.message__stat--agents {
+  color: #63b3ed;
+}
+
 .message__stat-icon {
   font-size: 11px;
 }
@@ -1125,6 +1158,12 @@ body {
 .detail-item__text--thinking {
   color: var(--text-dim);
   font-style: italic;
+}
+
+.detail-item__text--mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  opacity: 0.8;
 }
 
 .detail-item__json {
@@ -1519,4 +1558,173 @@ body {
 .view-active {
   opacity: 1;
   transition: opacity 0.15s ease-in;
+}
+
+/* Split layout for detail view with agent panel */
+.message-detail--split {
+  flex-direction: row;
+  overflow: hidden;
+}
+
+.message-detail__main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.message-detail--split .message-detail__main {
+  flex: 0 0 45%;
+  max-width: 45%;
+  border-right: 1px solid var(--border);
+}
+
+/* Ensure body scrolls within main pane */
+.message-detail__main .message-detail__body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* Panel chevron for subagent items with messages */
+.detail-item__chevron--panel {
+  color: #63b3ed;
+}
+
+/* Active subagent highlight in left pane */
+.detail-item--agent-active {
+  background: rgba(99, 179, 237, 0.08);
+  border-left: 2px solid #63b3ed;
+}
+
+/* Agent panel — reuses .message classes, tinted background */
+.agent-panel {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: rgba(99, 179, 237, 0.03);
+}
+
+.agent-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(99, 179, 237, 0.06);
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.agent-panel__close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.agent-panel__close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.agent-panel__icon {
+  font-size: 13px;
+}
+
+.agent-panel__type {
+  font-weight: 600;
+  color: #63b3ed;
+}
+
+.agent-panel__id {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  opacity: 0.7;
+  margin-left: auto;
+}
+
+.agent-panel__desc {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-panel__stats {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.agent-panel__content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.agent-panel__list {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* Messages inside agent panel get a slightly lighter background for readability */
+.agent-panel .message {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.agent-panel .message--selected {
+  background: rgba(99, 179, 237, 0.08);
+}
+
+/* Agent detail (nested detail inside panel) — split for deeper nesting */
+.agent-detail {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.agent-detail--split {
+  flex-direction: row;
+}
+
+.agent-detail__main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.agent-detail__main .message-detail__body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.agent-detail--split .agent-detail__main {
+  flex: 0 0 50%;
+  max-width: 50%;
+  border-right: 1px solid var(--border);
 }

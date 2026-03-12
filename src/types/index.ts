@@ -41,23 +41,11 @@ export interface DisplayItem {
   team_member_name: string;
   teammate_id: string;
   team_color: string;
-  subagent_process: SubagentProcess | null;
   subagent_ongoing: boolean;
+  agent_id: string;
+  subagent_messages: DisplayMessage[];
 }
 
-export interface SubagentProcess {
-  id: string;
-  chunks: unknown[];
-  duration_ms: number;
-  usage: Usage;
-}
-
-export interface Usage {
-  input_tokens: number;
-  output_tokens: number;
-  cache_read_tokens: number;
-  cache_creation_tokens: number;
-}
 
 export interface LastOutput {
   output_type: "Text" | "ToolResult" | "ToolCalls";

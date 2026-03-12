@@ -151,8 +151,9 @@ function MessageItem({
 
   const contentPreview = isExpanded ? msg.content : truncate(firstLine(msg.content), 200);
 
+  const subagentCount = msg.items.filter((it) => it.item_type === "Subagent").length;
   const hasStats =
-    msg.tokens_raw > 0 || msg.tool_call_count > 0 || msg.thinking_count > 0 || msg.duration_ms > 0;
+    msg.tokens_raw > 0 || msg.tool_call_count > 0 || msg.thinking_count > 0 || msg.duration_ms > 0 || subagentCount > 0;
 
   return (
     <div
@@ -240,6 +241,12 @@ function MessageItem({
             <span className="message__stat">
               <span className="message__stat-icon">{"\u23F1"}</span>
               {formatDuration(msg.duration_ms)}
+            </span>
+          )}
+          {subagentCount > 0 && (
+            <span className="message__stat message__stat--agents">
+              <span className="message__stat-icon">{"\u{1F9E9}"}</span>
+              {subagentCount} agent{subagentCount > 1 ? "s" : ""}
             </span>
           )}
           {msg.teammate_spawns > 0 && (

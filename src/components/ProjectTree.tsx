@@ -6,6 +6,8 @@ interface ProjectTreeProps {
   sessions: SessionInfo[];
   selectedProject: string | null;
   onSelectProject: (project: string | null) => void;
+  onRefresh: () => void;
+  refreshing?: boolean;
 }
 
 interface ProjectNode {
@@ -15,7 +17,7 @@ interface ProjectNode {
   hasOngoing: boolean;
 }
 
-export function ProjectTree({ sessions, selectedProject, onSelectProject }: ProjectTreeProps) {
+export function ProjectTree({ sessions, selectedProject, onSelectProject, onRefresh, refreshing }: ProjectTreeProps) {
   const projects = useMemo(() => {
     const map = new Map<string, { name: string; count: number; ongoing: boolean }>();
 
@@ -50,7 +52,16 @@ export function ProjectTree({ sessions, selectedProject, onSelectProject }: Proj
 
   return (
     <div className="project-tree">
-      <div className="project-tree__header">Projects</div>
+      <div className="project-tree__header">
+        <span>Projects</span>
+        <button
+          className={`project-tree__refresh${refreshing ? " project-tree__refresh--spinning" : ""}`}
+          onClick={(e) => { e.stopPropagation(); onRefresh(); }}
+          title="Refresh all projects"
+        >
+          {"\u21BB"}
+        </button>
+      </div>
       <div className="project-tree__list">
         <div
           className={`project-tree__item${selectedProject === null ? " project-tree__item--selected" : ""}`}

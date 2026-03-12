@@ -12,7 +12,7 @@ use crate::parser::session::read_session_incremental;
 use crate::parser::subagent::discover_and_link_all;
 use crate::parser::team::reconstruct_teams;
 
-const WATCHER_DEBOUNCE: Duration = Duration::from_millis(500);
+const WATCHER_DEBOUNCE: Duration = Duration::from_millis(200);
 
 /// Run a debounced file-change loop: receive notify events, apply `filter`,
 /// and send a signal after `WATCHER_DEBOUNCE` of quiet time.
@@ -95,6 +95,12 @@ pub fn start_session_watcher(
         // Watch the project directory for new team session files.
         let project_dir = Path::new(&path).parent().unwrap_or(Path::new(""));
         let _ = watcher.watch(project_dir, RecursiveMode::NonRecursive);
+
+        // Watch the subagents directory so ongoing dot updates quickly.
+        let subagents_dir = crate::parser::subagent::subagents_dir(&path);
+        if subagents_dir.exists() {
+            let _ = watcher.watch(&subagents_dir, RecursiveMode::NonRecursive);
+        }
 
         run_debounce_loop(
             rx,
