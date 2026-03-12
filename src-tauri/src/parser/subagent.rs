@@ -647,9 +647,8 @@ pub fn inject_orphan_subagents(chunks: &mut Vec<Chunk>, processes: &mut [Subagen
         return;
     }
 
-    // Sort orphans newest-first (descending start_time) to match the codebase
-    // convention where the message list shows newest items first.
-    orphan_indices.sort_by(|&a, &b| processes[b].start_time.cmp(&processes[a].start_time));
+    // Sort orphans oldest-first (ascending start_time).
+    orphan_indices.sort_by(|&a, &b| processes[a].start_time.cmp(&processes[b].start_time));
 
     // Find or create last AI chunk.
     let ai_idx = chunks.iter().rposition(|c| c.chunk_type == ChunkType::AI);
@@ -667,22 +666,25 @@ pub fn inject_orphan_subagents(chunks: &mut Vec<Chunk>, processes: &mut [Subagen
         }
     };
 
-    for &oi in &orphan_indices {
+    for (insert_pos, &oi) in orphan_indices.iter().enumerate() {
         let synthetic_tool_id = format!("orphan-{}", processes[oi].id);
         // Set parent_task_id so convert_display_items can link via proc_by_task_id.
         processes[oi].parent_task_id = synthetic_tool_id.clone();
 
-        chunks[idx].items.push(DisplayItem {
-            item_type: DisplayItemType::Subagent,
-            tool_name: "Agent".to_string(),
-            tool_id: synthetic_tool_id,
-            subagent_type: processes[oi].subagent_type.clone(),
-            subagent_desc: processes[oi].description.clone(),
-            is_orphan: true,
-            duration_ms: processes[oi].duration_ms,
-            token_count: processes[oi].usage.total_tokens() as usize / 4,
-            ..Default::default()
-        });
+        chunks[idx].items.insert(
+            insert_pos,
+            DisplayItem {
+                item_type: DisplayItemType::Subagent,
+                tool_name: "Agent".to_string(),
+                tool_id: synthetic_tool_id,
+                subagent_type: processes[oi].subagent_type.clone(),
+                subagent_desc: processes[oi].description.clone(),
+                is_orphan: true,
+                duration_ms: processes[oi].duration_ms,
+                token_count: processes[oi].usage.total_tokens() as usize / 4,
+                ..Default::default()
+            },
+        );
     }
 }
 
