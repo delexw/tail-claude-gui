@@ -1,22 +1,49 @@
 import { useMemo } from "react";
-import type { DisplayMessage, SessionMeta, GitInfo } from "../types";
-import { shortPath, shortMode, contextPercent } from "../lib/format";
+import type { DisplayMessage, SessionMeta, SessionTotals, GitInfo } from "../types";
+import {
+  shortPath,
+  shortMode,
+  contextPercent,
+  formatTokens,
+  estimateCost,
+  formatCost,
+} from "../lib/format";
 import { getContextColor, spinnerFrames } from "../lib/theme";
 
 interface InfoBarProps {
   meta: SessionMeta;
   gitInfo: GitInfo | null;
   messages: DisplayMessage[];
+  sessionTotals: SessionTotals;
   ongoing: boolean;
   animFrame?: number;
 }
 
-export function InfoBar({ meta, gitInfo, messages, ongoing, animFrame = 0 }: InfoBarProps) {
+export function InfoBar({
+  meta,
+  gitInfo,
+  messages,
+  sessionTotals,
+  ongoing,
+  animFrame = 0,
+}: InfoBarProps) {
   const projectName = shortPath(meta.cwd, meta.git_branch);
   const branch = gitInfo?.branch || meta.git_branch;
   const dirty = gitInfo?.dirty ?? false;
   const mode = meta.permission_mode;
   const ctxPct = useMemo(() => contextPercent(messages), [messages]);
+
+  const totalCost = useMemo(
+    () =>
+      estimateCost(
+        sessionTotals.input_tokens,
+        sessionTotals.output_tokens,
+        sessionTotals.cache_read_tokens,
+        sessionTotals.cache_creation_tokens,
+        sessionTotals.model,
+      ),
+    [sessionTotals],
+  );
 
   const pillClass =
     mode === "bypassPermissions"
@@ -55,6 +82,13 @@ export function InfoBar({ meta, gitInfo, messages, ongoing, animFrame = 0 }: Inf
           </div>
         </div>
       )}
+
+      {sessionTotals.total_tokens > 0 && (
+        <span className="info-bar__tokens">
+          {"\u{1FA99}"} {formatTokens(sessionTotals.total_tokens)} tok
+        </span>
+      )}
+      {totalCost > 0 && <span className="info-bar__cost">{formatCost(totalCost)}</span>}
 
       {ongoing && (
         <span className="info-bar__ongoing">

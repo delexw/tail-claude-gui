@@ -1,10 +1,12 @@
-import { useRef } from "react";
+import { useRef, useMemo } from "react";
 import { useScrollToSelected } from "../hooks/useScrollToSelected";
 import type { SessionInfo } from "../types";
 import {
   formatTokens,
   formatDuration,
   formatExactTime,
+  formatCost,
+  estimateCost,
   truncate,
   groupByDate,
   shortModel,
@@ -38,13 +40,37 @@ export function SessionPicker({
 
   const dateGroups = groupByDate(sessions);
 
+  const { totalTokens, totalCost } = useMemo(() => {
+    let tokens = 0;
+    let cost = 0;
+    for (const s of sessions) {
+      tokens += s.total_tokens;
+      cost += estimateCost(
+        s.input_tokens,
+        s.output_tokens,
+        s.cache_read_tokens,
+        s.cache_creation_tokens,
+        s.model,
+      );
+    }
+    return { totalTokens: tokens, totalCost: cost };
+  }, [sessions]);
+
   // Build flat list for index tracking
   let flatIndex = 0;
 
   return (
     <div className="picker">
       <div className="picker__header">
-        <div className="picker__title">Sessions</div>
+        <div className="picker__title">
+          Sessions
+          {totalTokens > 0 && (
+            <span className="picker__total-tokens">
+              {"\u{1FA99}"} {formatTokens(totalTokens)} tok
+            </span>
+          )}
+          {totalCost > 0 && <span className="picker__total-cost">{formatCost(totalCost)}</span>}
+        </div>
         <input
           ref={searchRef}
           className="picker__search"
@@ -77,6 +103,13 @@ export function SessionPicker({
               const isSelected = idx === selectedIndex;
               const model = shortModel(session.model);
               const modelClr = getModelColor(session.model);
+              const sessionCost = estimateCost(
+                session.input_tokens,
+                session.output_tokens,
+                session.cache_read_tokens,
+                session.cache_creation_tokens,
+                session.model,
+              );
 
               return (
                 <div
@@ -105,6 +138,11 @@ export function SessionPicker({
                     {session.total_tokens > 0 && (
                       <span className="picker__session-stat">
                         {formatTokens(session.total_tokens)} tok
+                      </span>
+                    )}
+                    {sessionCost > 0 && (
+                      <span className="picker__session-stat picker__session-stat--cost">
+                        {formatCost(sessionCost)}
                       </span>
                     )}
                     {session.duration_ms > 0 && (

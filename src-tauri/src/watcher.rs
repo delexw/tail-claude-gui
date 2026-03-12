@@ -62,6 +62,7 @@ struct SessionUpdatePayload {
     teams: Vec<crate::parser::team::TeamSnapshot>,
     ongoing: bool,
     permission_mode: String,
+    session_totals: crate::convert::SessionTotals,
 }
 
 /// Start watching a session file. Emits "session-update" events on changes.
@@ -153,11 +154,23 @@ pub fn start_session_watcher(
                         }
                     }
 
+                    // Scan main session + subagent files with global requestId dedup.
+                    let scanned = crate::parser::session::scan_session_metadata(&path_for_rebuild);
+                    let session_totals = crate::convert::SessionTotals {
+                        total_tokens: scanned.total_tokens,
+                        input_tokens: scanned.input_tokens,
+                        output_tokens: scanned.output_tokens,
+                        cache_read_tokens: scanned.cache_read_tokens,
+                        cache_creation_tokens: scanned.cache_creation_tokens,
+                        model: scanned.model,
+                    };
+
                     let payload = SessionUpdatePayload {
                         messages,
                         teams,
                         ongoing,
                         permission_mode,
+                        session_totals,
                     };
 
                     let _ = app.emit("session-update", payload);

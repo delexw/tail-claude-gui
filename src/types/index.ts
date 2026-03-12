@@ -9,6 +9,10 @@ export interface DisplayMessage {
   tool_call_count: number;
   output_count: number;
   tokens_raw: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_creation_tokens: number;
   context_tokens: number;
   duration_ms: number;
   items: DisplayItem[];
@@ -77,6 +81,10 @@ export interface SessionInfo {
   turn_count: number;
   is_ongoing: boolean;
   total_tokens: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_creation_tokens: number;
   duration_ms: number;
   model: string;
   cwd: string;
@@ -112,11 +120,21 @@ export interface DateGroup {
   sessions: SessionInfo[];
 }
 
+export interface SessionTotals {
+  total_tokens: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_creation_tokens: number;
+  model: string;
+}
+
 export interface LoadResult {
   messages: DisplayMessage[];
   teams: TeamSnapshot[];
   ongoing: boolean;
   meta: SessionMeta;
+  session_totals: SessionTotals;
 }
 
 export interface GitInfo {

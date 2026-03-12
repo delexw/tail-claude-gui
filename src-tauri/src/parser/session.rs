@@ -20,6 +20,10 @@ pub struct SessionInfo {
     pub turn_count: i32,
     pub is_ongoing: bool,
     pub total_tokens: i64,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub cache_read_tokens: i64,
+    pub cache_creation_tokens: i64,
     pub duration_ms: i64,
     pub model: String,
     pub cwd: String,
@@ -175,6 +179,10 @@ pub fn discover_project_sessions(project_dir: &str) -> Result<Vec<SessionInfo>, 
             turn_count: meta.turn_count,
             is_ongoing,
             total_tokens: meta.total_tokens,
+            input_tokens: meta.input_tokens,
+            output_tokens: meta.output_tokens,
+            cache_read_tokens: meta.cache_read_tokens,
+            cache_creation_tokens: meta.cache_creation_tokens,
             duration_ms: meta.duration_ms,
             model: meta.model,
             cwd: meta.cwd,
@@ -209,6 +217,7 @@ pub fn session_info_from_metadata(path: &str, mod_time: std::time::SystemTime, m
         .and_then(|n| n.to_str())
         .unwrap_or("");
     let session_id = name.trim_end_matches(".jsonl").to_string();
+
     SessionInfo {
         path: path.to_string(),
         session_id,
@@ -217,6 +226,10 @@ pub fn session_info_from_metadata(path: &str, mod_time: std::time::SystemTime, m
         turn_count: meta.turn_count,
         is_ongoing,
         total_tokens: meta.total_tokens,
+        input_tokens: meta.input_tokens,
+        output_tokens: meta.output_tokens,
+        cache_read_tokens: meta.cache_read_tokens,
+        cache_creation_tokens: meta.cache_creation_tokens,
         duration_ms: meta.duration_ms,
         model: meta.model,
         cwd: meta.cwd,
@@ -270,6 +283,10 @@ pub(crate) struct SessionMetadata {
     pub(crate) turn_count: i32,
     pub(crate) is_ongoing: bool,
     pub(crate) total_tokens: i64,
+    pub(crate) input_tokens: i64,
+    pub(crate) output_tokens: i64,
+    pub(crate) cache_read_tokens: i64,
+    pub(crate) cache_creation_tokens: i64,
     pub(crate) duration_ms: i64,
     pub(crate) model: String,
     pub(crate) cwd: String,
@@ -284,6 +301,10 @@ impl Default for SessionMetadata {
             turn_count: 0,
             is_ongoing: false,
             total_tokens: 0,
+            input_tokens: 0,
+            output_tokens: 0,
+            cache_read_tokens: 0,
+            cache_creation_tokens: 0,
             duration_ms: 0,
             model: String::new(),
             cwd: String::new(),
@@ -409,7 +430,8 @@ pub(crate) fn scan_session_metadata(path: &str) -> SessionMetadata {
         }
 
         // --- Token accumulation (dedup streaming entries by requestId) ---
-        if entry_type == "assistant" && !is_sidechain {
+        // Include sidechain entries so cost reflects all API calls.
+        if entry_type == "assistant" {
             let model_str = raw
                 .get("message")
                 .and_then(|m| m.get("model"))
@@ -447,11 +469,15 @@ pub(crate) fn scan_session_metadata(path: &str) -> SessionMetadata {
                         // No requestId: sum directly.
                         meta.total_tokens +=
                             snap.input + snap.output + snap.cache_read + snap.cache_create;
+                        meta.input_tokens += snap.input;
+                        meta.output_tokens += snap.output;
+                        meta.cache_read_tokens += snap.cache_read;
+                        meta.cache_creation_tokens += snap.cache_create;
                     }
                 }
 
-                // Model extraction (first real assistant entry).
-                if meta.model.is_empty() && !model_str.is_empty() {
+                // Model extraction (first real main-context assistant entry).
+                if !is_sidechain && meta.model.is_empty() && !model_str.is_empty() {
                     meta.model = model_str.to_string();
                 }
             }
@@ -529,9 +555,86 @@ pub(crate) fn scan_session_metadata(path: &str) -> SessionMetadata {
         meta.permission_mode = "default".to_string();
     }
 
+    // --- Scan subagent JSONL files into the SAME request_tokens map (global dedup) ---
+    {
+        let dir = std::path::Path::new(path).parent().unwrap_or(std::path::Path::new(""));
+        let base = std::path::Path::new(path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+        let subagents_dir = dir.join(base).join("subagents");
+        if let Ok(entries) = fs::read_dir(&subagents_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if !name.starts_with("agent-") || !name.ends_with(".jsonl") {
+                    continue;
+                }
+                if name.starts_with("agent-acompact") {
+                    continue;
+                }
+                let file_path = subagents_dir.join(&name);
+                let sf = match fs::File::open(&file_path) {
+                    Ok(f) => f,
+                    Err(_) => continue,
+                };
+                let sub_reader = BufReader::new(sf);
+                for sub_line in sub_reader.lines() {
+                    let sub_line = match sub_line {
+                        Ok(l) => l,
+                        Err(_) => break,
+                    };
+                    let sub_raw: Value = match serde_json::from_str(&sub_line) {
+                        Ok(v) => v,
+                        Err(_) => continue,
+                    };
+                    let sub_type = sub_raw.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                    if sub_type != "assistant" {
+                        continue;
+                    }
+                    let sub_model = sub_raw
+                        .get("message")
+                        .and_then(|m| m.get("model"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    if sub_model == "<synthetic>" {
+                        continue;
+                    }
+                    let sub_usage = match sub_raw.get("message").and_then(|m| m.get("usage")) {
+                        Some(u) => u,
+                        None => continue,
+                    };
+                    let snap = TokenSnapshot {
+                        input: sub_usage.get("input_tokens").and_then(|v| v.as_i64()).unwrap_or(0),
+                        output: sub_usage.get("output_tokens").and_then(|v| v.as_i64()).unwrap_or(0),
+                        cache_read: sub_usage.get("cache_read_input_tokens").and_then(|v| v.as_i64()).unwrap_or(0),
+                        cache_create: sub_usage.get("cache_creation_input_tokens").and_then(|v| v.as_i64()).unwrap_or(0),
+                    };
+                    if snap.input + snap.output + snap.cache_read + snap.cache_create == 0 {
+                        continue;
+                    }
+                    let req_id = sub_raw.get("requestId").and_then(|v| v.as_str()).unwrap_or("");
+                    if !req_id.is_empty() {
+                        // Same global map — deduplicates across main + subagent files.
+                        request_tokens.insert(req_id.to_string(), snap);
+                    } else {
+                        meta.total_tokens += snap.input + snap.output + snap.cache_read + snap.cache_create;
+                        meta.input_tokens += snap.input;
+                        meta.output_tokens += snap.output;
+                        meta.cache_read_tokens += snap.cache_read;
+                        meta.cache_creation_tokens += snap.cache_create;
+                    }
+                }
+            }
+        }
+    }
+
     // Finalize token totals: sum the last-seen usage per requestId.
     for snap in request_tokens.values() {
         meta.total_tokens += snap.input + snap.output + snap.cache_read + snap.cache_create;
+        meta.input_tokens += snap.input;
+        meta.output_tokens += snap.output;
+        meta.cache_read_tokens += snap.cache_read;
+        meta.cache_creation_tokens += snap.cache_create;
     }
 
     // Finalize ongoing detection.

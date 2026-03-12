@@ -4,6 +4,7 @@ import type {
   DisplayMessage,
   TeamSnapshot,
   SessionMeta,
+  SessionTotals,
   LoadResult,
   GitInfo,
   DebugEntry,
@@ -15,6 +16,7 @@ interface SessionState {
   teams: TeamSnapshot[];
   ongoing: boolean;
   meta: SessionMeta;
+  sessionTotals: SessionTotals;
   sessionPath: string;
   gitInfo: GitInfo | null;
   debugEntries: DebugEntry[];
@@ -27,12 +29,22 @@ const emptyMeta: SessionMeta = {
   permission_mode: "",
 };
 
+const emptyTotals: SessionTotals = {
+  total_tokens: 0,
+  input_tokens: 0,
+  output_tokens: 0,
+  cache_read_tokens: 0,
+  cache_creation_tokens: 0,
+  model: "",
+};
+
 export function useSession() {
   const [state, setState] = useState<SessionState>({
     messages: [],
     teams: [],
     ongoing: false,
     meta: emptyMeta,
+    sessionTotals: emptyTotals,
     sessionPath: "",
     gitInfo: null,
     debugEntries: [],
@@ -68,6 +80,7 @@ export function useSession() {
         teams: result.teams,
         ongoing: result.ongoing,
         meta: result.meta,
+        sessionTotals: result.session_totals,
         sessionPath: path,
         gitInfo,
         debugEntries: [],
@@ -103,12 +116,14 @@ export function useSession() {
     teams: TeamSnapshot[];
     ongoing: boolean;
     permission_mode: string;
+    session_totals: SessionTotals;
   }>("session-update", (payload) => {
     setState((prev) => ({
       ...prev,
       messages: payload.messages,
       teams: payload.teams,
       ongoing: payload.ongoing,
+      sessionTotals: payload.session_totals,
       meta: {
         ...prev.meta,
         permission_mode: payload.permission_mode || prev.meta.permission_mode,

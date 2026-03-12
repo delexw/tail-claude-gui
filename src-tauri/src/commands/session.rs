@@ -42,12 +42,24 @@ pub async fn load_session(path: String) -> Result<LoadResult, String> {
     let messages = chunks_to_messages(&chunks, &all_procs, &color_map);
     let meta = extract_session_meta(&path);
 
+    // Scan main session + subagent files with global requestId dedup.
+    let scanned = crate::parser::session::scan_session_metadata(&path);
+    let session_totals = SessionTotals {
+        total_tokens: scanned.total_tokens,
+        input_tokens: scanned.input_tokens,
+        output_tokens: scanned.output_tokens,
+        cache_read_tokens: scanned.cache_read_tokens,
+        cache_creation_tokens: scanned.cache_creation_tokens,
+        model: scanned.model,
+    };
+
     Ok(LoadResult {
         messages,
         teams,
         path: path.clone(),
         ongoing,
         meta,
+        session_totals,
     })
 }
 

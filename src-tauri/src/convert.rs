@@ -63,6 +63,10 @@ pub struct DisplayMessage {
     pub tool_call_count: usize,
     pub output_count: usize,
     pub tokens_raw: i64,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub cache_read_tokens: i64,
+    pub cache_creation_tokens: i64,
     pub context_tokens: i64,
     pub duration_ms: i64,
     pub items: Vec<FrontendDisplayItem>,
@@ -73,6 +77,17 @@ pub struct DisplayMessage {
     pub subagent_label: String,
 }
 
+/// Session-wide token totals (includes sidechains/subagents).
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct SessionTotals {
+    pub total_tokens: i64,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub cache_read_tokens: i64,
+    pub cache_creation_tokens: i64,
+    pub model: String,
+}
+
 /// LoadResult holds everything needed to bootstrap the frontend.
 #[derive(Debug, Clone, Serialize)]
 pub struct LoadResult {
@@ -81,6 +96,7 @@ pub struct LoadResult {
     pub path: String,
     pub ongoing: bool,
     pub meta: crate::parser::session::SessionMeta,
+    pub session_totals: SessionTotals,
 }
 
 /// Format a timestamp as "yyyy-mm-dd hh:mm:ss".
@@ -272,6 +288,10 @@ pub fn chunks_to_messages(
                     tool_call_count: 0,
                     output_count: 0,
                     tokens_raw: 0,
+                    input_tokens: 0,
+                    output_tokens: 0,
+                    cache_read_tokens: 0,
+                    cache_creation_tokens: 0,
                     context_tokens: 0,
                     duration_ms: 0,
                     items: Vec::new(),
@@ -306,6 +326,10 @@ pub fn chunks_to_messages(
                     tool_call_count: c.tool_calls.len(),
                     output_count: count_output_items(&c.items),
                     tokens_raw: c.usage.total_tokens(),
+                    input_tokens: c.usage.input_tokens,
+                    output_tokens: c.usage.output_tokens,
+                    cache_read_tokens: c.usage.cache_read_tokens,
+                    cache_creation_tokens: c.usage.cache_creation_tokens,
                     context_tokens: c.usage.input_tokens + c.usage.cache_read_tokens + c.usage.cache_creation_tokens,
                     duration_ms: c.duration_ms,
                     items: convert_display_items(&c.items, subagents, color_by_tool_id),
@@ -326,6 +350,10 @@ pub fn chunks_to_messages(
                     tool_call_count: 0,
                     output_count: 0,
                     tokens_raw: 0,
+                    input_tokens: 0,
+                    output_tokens: 0,
+                    cache_read_tokens: 0,
+                    cache_creation_tokens: 0,
                     context_tokens: 0,
                     duration_ms: 0,
                     items: Vec::new(),
@@ -346,6 +374,10 @@ pub fn chunks_to_messages(
                     tool_call_count: 0,
                     output_count: 0,
                     tokens_raw: 0,
+                    input_tokens: 0,
+                    output_tokens: 0,
+                    cache_read_tokens: 0,
+                    cache_creation_tokens: 0,
                     context_tokens: 0,
                     duration_ms: 0,
                     items: Vec::new(),

@@ -30,6 +30,53 @@ export function formatTokens(n: number): string {
   return String(n);
 }
 
+// Claude API pricing per million tokens (USD).
+// Model-specific rates; we pick by the model string prefix.
+const MODEL_PRICING: {
+  prefix: string;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+}[] = [
+  { prefix: "opus", input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
+  { prefix: "sonnet", input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+  { prefix: "haiku", input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 },
+];
+
+function pricingForModel(model: string) {
+  const m = model.toLowerCase();
+  return MODEL_PRICING.find((p) => m.includes(p.prefix)) ?? MODEL_PRICING[1]; // default sonnet
+}
+
+/**
+ * Estimates USD cost from token breakdown and model string.
+ */
+export function estimateCost(
+  input: number,
+  output: number,
+  cacheRead: number,
+  cacheWrite: number,
+  model: string,
+): number {
+  const p = pricingForModel(model);
+  return (
+    (input * p.input + output * p.output + cacheRead * p.cacheRead + cacheWrite * p.cacheWrite) /
+    1_000_000
+  );
+}
+
+/**
+ * Formats a dollar amount: 0.0023 -> "$0.002", 1.23 -> "$1.23", 12.5 -> "$12.50"
+ */
+export function formatCost(usd: number): string {
+  if (usd >= 10) return "$" + usd.toFixed(1);
+  if (usd >= 1) return "$" + usd.toFixed(2);
+  if (usd >= 0.01) return "$" + usd.toFixed(3);
+  if (usd >= 0.001) return "$" + usd.toFixed(4);
+  return "<$0.001";
+}
+
 /**
  * Formats milliseconds into human-readable duration.
  */

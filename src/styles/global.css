@@ -284,6 +284,17 @@ body {
   transition: width 0.3s ease;
 }
 
+.info-bar__tokens {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.info-bar__cost {
+  color: var(--error);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .info-bar__ongoing {
   display: flex;
   align-items: center;
@@ -476,6 +487,23 @@ body {
   font-weight: 600;
   color: var(--text-primary);
   margin-bottom: 8px;
+}
+
+.picker__total-tokens {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+.picker__total-cost {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--error);
+}
+
+.picker__session-stat--cost {
+  color: var(--error);
+  font-weight: 600;
 }
 
 .picker__back-btn {

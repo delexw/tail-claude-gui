@@ -272,6 +272,7 @@ export function App() {
           meta={session.meta}
           gitInfo={session.gitInfo}
           messages={session.messages}
+          sessionTotals={session.sessionTotals}
           ongoing={session.ongoing}
           animFrame={animFrame}
         />
