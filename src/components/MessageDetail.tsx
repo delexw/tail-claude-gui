@@ -117,8 +117,17 @@ interface AgentPanelProps {
 function AgentPanel({ item, onClose }: AgentPanelProps) {
   const messages = item.subagent_messages;
   const [selectedMsg, setSelectedMsg] = useState(messages.length - 1);
-  const { set: expandedSet, toggle: toggleMsg } = useToggleSet();
+  const { set: expandedSet, toggle: toggleMsg, clear: clearExpanded } = useToggleSet();
   const [detailMsg, setDetailMsg] = useState<DisplayMessage | null>(null);
+  const prevAgentId = useRef(item.agent_id);
+
+  // Reset state when switching to a different agent
+  if (item.agent_id !== prevAgentId.current) {
+    prevAgentId.current = item.agent_id;
+    setSelectedMsg(messages.length - 1);
+    setDetailMsg(null);
+    clearExpanded();
+  }
 
   const listRef = useRef<HTMLDivElement>(null);
   const selectedRef = useScrollToSelected(selectedMsg);
