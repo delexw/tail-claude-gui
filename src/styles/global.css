@@ -308,6 +308,29 @@ body {
   animation: pulse 1.5s ease-in-out infinite;
 }
 
+.project-tree__item--child {
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.project-tree__branch {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.project-tree__item--group {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  cursor: default;
+  opacity: 0.7;
+}
+
+.project-tree__item--group:hover {
+  background: transparent;
+}
+
 /* ---- Info Bar ---- */
 
 .info-bar {

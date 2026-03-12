@@ -28,7 +28,7 @@ npm run check            # tsc + oxlint + oxfmt --check + clippy + cargo fmt --c
 
 ## Rule
 
-After every code change, run lint, format, and test before committing:
+After every code change, always add enough tests for the changes, then run lint, format, and test before committing:
 
 ```bash
 npx oxfmt && npx oxlint && npx tsc --noEmit && npx vitest run && cargo fmt --manifest-path src-tauri/Cargo.toml && cargo clippy --manifest-path src-tauri/Cargo.toml && cargo test --manifest-path src-tauri/Cargo.toml
