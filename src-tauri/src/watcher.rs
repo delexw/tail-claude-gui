@@ -9,7 +9,7 @@ use crate::parser::chunk::build_chunks;
 use crate::parser::classify::ClassifiedMsg;
 use crate::parser::ongoing::{is_ongoing, is_subagent_ongoing};
 use crate::parser::session::read_session_incremental;
-use crate::parser::subagent::discover_and_link_all;
+use crate::parser::subagent::{discover_and_link_all, inject_orphan_subagents};
 use crate::parser::team::reconstruct_teams;
 
 const WATCHER_DEBOUNCE: Duration = Duration::from_millis(200);
@@ -137,9 +137,10 @@ pub fn start_session_watcher(
                         Err(_) => continue,
                     }
 
-                    let chunks = build_chunks(&all_classified);
+                    let mut chunks = build_chunks(&all_classified);
 
-                    let (all_procs, color_map) = discover_and_link_all(&path_for_rebuild, &chunks);
+                    let (mut all_procs, color_map) = discover_and_link_all(&path_for_rebuild, &chunks);
+                    inject_orphan_subagents(&mut chunks, &mut all_procs);
 
                     let mut ongoing = is_ongoing(&chunks);
                     if !ongoing {

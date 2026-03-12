@@ -873,6 +873,7 @@ function DetailItem({
           {name}
         </span>
         <span className="detail-item__summary">{summary}</span>
+        {item.is_orphan && <span className="detail-item__orphan-badge">orphan</span>}
         {item.agent_id && <span className="detail-item__agent-id">{item.agent_id}</span>}
         <span className="detail-item__right">
           {item.duration_ms > 0 && (

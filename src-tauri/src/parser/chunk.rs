@@ -42,6 +42,7 @@ pub struct DisplayItem {
     pub hook_event: String,
     pub hook_name: String,
     pub hook_command: String,
+    pub is_orphan: bool,
 }
 
 impl Default for DisplayItem {
@@ -66,6 +67,7 @@ impl Default for DisplayItem {
             hook_event: String::new(),
             hook_name: String::new(),
             hook_command: String::new(),
+            is_orphan: false,
         }
     }
 }

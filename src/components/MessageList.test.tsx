@@ -177,6 +177,7 @@ describe("MessageList", () => {
             hook_event: "",
             hook_name: "",
             hook_command: "",
+            is_orphan: false,
           },
         ],
       }),

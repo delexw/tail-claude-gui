@@ -1305,6 +1305,20 @@ body {
   animation: pulse 1.5s ease-in-out infinite;
 }
 
+.detail-item__orphan-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--warning, #b8860b);
+  color: var(--bg);
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.85;
+}
+
 .detail-item__popout-btn {
   background: none;
   border: none;

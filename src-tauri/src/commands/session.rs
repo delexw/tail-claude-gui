@@ -4,7 +4,7 @@ use crate::convert::*;
 use crate::parser::chunk::build_chunks;
 use crate::parser::ongoing::{apply_staleness, is_ongoing, is_subagent_ongoing};
 use crate::parser::session::{extract_session_meta, read_session_incremental, SessionMeta};
-use crate::parser::subagent::discover_and_link_all;
+use crate::parser::subagent::{discover_and_link_all, inject_orphan_subagents};
 use crate::parser::team::reconstruct_teams;
 use crate::state::AppState;
 use crate::watcher::start_session_watcher;
@@ -17,14 +17,13 @@ pub async fn load_session(path: String) -> Result<LoadResult, String> {
     }
 
     let (classified, _new_offset, _) = read_session_incremental(&path, 0)?;
-    let chunks = build_chunks(&classified);
-
-    if chunks.is_empty() {
-        return Err(format!("session {path} has no messages"));
-    }
+    let mut chunks = build_chunks(&classified);
 
     // Discover and link subagent execution traces.
-    let (all_procs, color_map) = discover_and_link_all(&path, &chunks);
+    let (mut all_procs, color_map) = discover_and_link_all(&path, &chunks);
+
+    // Inject orphan subagents (no parent tool_use in main session yet).
+    inject_orphan_subagents(&mut chunks, &mut all_procs);
 
     let mut ongoing = is_ongoing(&chunks);
     if !ongoing {

@@ -53,6 +53,7 @@ export interface DisplayItem {
   hook_event: string;
   hook_name: string;
   hook_command: string;
+  is_orphan: boolean;
 }
 
 export interface LastOutput {

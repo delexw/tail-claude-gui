@@ -38,6 +38,7 @@ pub struct FrontendDisplayItem {
     pub hook_event: String,
     pub hook_name: String,
     pub hook_command: String,
+    pub is_orphan: bool,
 }
 
 /// Frontend last output.
@@ -242,6 +243,7 @@ fn convert_display_items(
                 hook_event: it.hook_event.clone(),
                 hook_name: it.hook_name.clone(),
                 hook_command: it.hook_command.clone(),
+                is_orphan: it.is_orphan,
             };
 
             // Link subagent process if available (Subagent items and ToolCall items like Skill).

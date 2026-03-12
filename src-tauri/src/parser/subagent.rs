@@ -248,31 +248,72 @@ pub fn discover_subagents(session_path: &str) -> Result<Vec<SubagentProcess>, St
             continue;
         }
 
-        let (start_time, end_time, duration_ms) = chunk_timing(&chunks);
-        let usage = aggregate_usage(&chunks);
-        let file_mod_time = metadata
-            .modified()
-            .ok()
-            .map(DateTime::<Utc>::from)
-            .unwrap_or_else(Utc::now);
+        let meta_path = subagents_dir
+            .join(name.replace(".jsonl", ".meta.json"))
+            .to_string_lossy()
+            .to_string();
+        let subagent_type = read_agent_type(&meta_path);
 
-        procs.push(SubagentProcess {
-            id: agent_id,
+        procs.push(build_subagent_process(
+            agent_id,
             file_path,
-            file_mod_time,
+            &metadata,
             chunks,
-            start_time,
-            end_time,
-            duration_ms,
-            usage,
+            subagent_type,
             team_summary,
-            teammate_color: team_color,
-            ..Default::default()
-        });
+            team_color,
+        ));
     }
 
     procs.sort_by(|a, b| a.start_time.cmp(&b.start_time));
     Ok(procs)
+}
+
+/// Build a SubagentProcess from parsed chunks and file metadata.
+fn build_subagent_process(
+    id: String,
+    file_path: String,
+    metadata: &std::fs::Metadata,
+    chunks: Vec<Chunk>,
+    subagent_type: String,
+    team_summary: String,
+    teammate_color: String,
+) -> SubagentProcess {
+    let (start_time, end_time, duration_ms) = chunk_timing(&chunks);
+    let usage = aggregate_usage(&chunks);
+    let file_mod_time = metadata
+        .modified()
+        .ok()
+        .map(DateTime::<Utc>::from)
+        .unwrap_or_else(Utc::now);
+
+    SubagentProcess {
+        id,
+        file_path,
+        file_mod_time,
+        chunks,
+        start_time,
+        end_time,
+        duration_ms,
+        usage,
+        subagent_type,
+        team_summary,
+        teammate_color,
+        ..Default::default()
+    }
+}
+
+/// Read agentType from a .meta.json file next to a subagent .jsonl.
+fn read_agent_type(meta_path: &str) -> String {
+    fs::read_to_string(meta_path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .and_then(|v| {
+            v.get("agentType")
+                .and_then(|a| a.as_str())
+                .map(String::from)
+        })
+        .unwrap_or_default()
 }
 
 fn is_warmup_agent(path: &str) -> bool {
@@ -535,6 +576,94 @@ pub fn link_subagents(
     links.tool_id_to_color
 }
 
+/// Inject synthetic Subagent DisplayItems for processes that remain unlinked
+/// (no parent_task_id) after all linking phases. Appends them to the last AI
+/// chunk, or creates a new AI chunk if none exists.
+pub fn inject_orphan_subagents(chunks: &mut Vec<Chunk>, processes: &mut [SubagentProcess]) {
+    let mut orphan_indices: Vec<usize> = processes
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p.parent_task_id.is_empty() && !p.chunks.is_empty())
+        .map(|(i, _)| i)
+        .collect();
+
+    if orphan_indices.is_empty() {
+        return;
+    }
+
+    // Sort orphans newest-first (descending start_time) to match the codebase
+    // convention where the message list shows newest items first.
+    orphan_indices.sort_by(|&a, &b| processes[b].start_time.cmp(&processes[a].start_time));
+
+    // Find or create last AI chunk.
+    let ai_idx = chunks.iter().rposition(|c| c.chunk_type == ChunkType::AI);
+
+    let idx = match ai_idx {
+        Some(i) => i,
+        None => {
+            // No AI chunk — create a synthetic one.
+            chunks.push(Chunk {
+                chunk_type: ChunkType::AI,
+                timestamp: processes[orphan_indices[0]].start_time,
+                ..Default::default()
+            });
+            chunks.len() - 1
+        }
+    };
+
+    for &oi in &orphan_indices {
+        let synthetic_tool_id = format!("orphan-{}", processes[oi].id);
+        // Set parent_task_id so convert_display_items can link via proc_by_task_id.
+        processes[oi].parent_task_id = synthetic_tool_id.clone();
+
+        // Derive description from first user chunk if not already set.
+        let desc = if !processes[oi].description.is_empty() {
+            processes[oi].description.clone()
+        } else {
+            orphan_description(&processes[oi].chunks)
+        };
+
+        chunks[idx].items.push(DisplayItem {
+            item_type: DisplayItemType::Subagent,
+            tool_name: "Agent".to_string(),
+            tool_id: synthetic_tool_id,
+            subagent_type: processes[oi].subagent_type.clone(),
+            subagent_desc: desc,
+            is_orphan: true,
+            duration_ms: processes[oi].duration_ms,
+            token_count: processes[oi].usage.total_tokens() as usize / 4,
+            ..Default::default()
+        });
+    }
+}
+
+/// Extract a description for an orphan subagent from its first user chunk.
+fn orphan_description(chunks: &[Chunk]) -> String {
+    for c in chunks {
+        if c.chunk_type == ChunkType::User && !c.user_text.is_empty() {
+            let text = c.user_text.trim();
+            // Extract skill name from "Base directory for this skill: .../skill-name"
+            if let Some(pos) = text.find("Base directory for this skill:") {
+                let path = text[pos + 30..].trim();
+                if let Some(name) = path.rsplit('/').next() {
+                    if !name.is_empty() {
+                        return name.to_string();
+                    }
+                }
+            }
+            // Fallback: first line, truncated
+            let first_line = text.lines().next().unwrap_or(text);
+            let truncated = if first_line.len() > 80 {
+                format!("{}\u{2026}", &first_line[..79])
+            } else {
+                first_line.to_string()
+            };
+            return truncated;
+        }
+    }
+    String::new()
+}
+
 struct AgentLinkData {
     agent_to_tool_id: HashMap<String, String>,
     tool_id_to_color: HashMap<String, String>,
@@ -733,26 +862,15 @@ pub fn discover_team_sessions(
             continue;
         }
 
-        let (start_time, end_time, duration_ms) = chunk_timing(&chunks);
-        let usage = aggregate_usage(&chunks);
-        let file_mod_time = metadata
-            .modified()
-            .ok()
-            .map(DateTime::<Utc>::from)
-            .unwrap_or_else(Utc::now);
-
-        procs.push(SubagentProcess {
-            id: format!("{agent_name}@{team_name}"),
+        procs.push(build_subagent_process(
+            format!("{agent_name}@{team_name}"),
             file_path,
-            file_mod_time,
+            &metadata,
             chunks,
-            start_time,
-            end_time,
-            duration_ms,
-            usage,
-            teammate_color: team_color,
-            ..Default::default()
-        });
+            String::new(),
+            String::new(),
+            team_color,
+        ));
     }
 
     procs.sort_by(|a, b| a.start_time.cmp(&b.start_time));
