@@ -4,6 +4,10 @@ A desktop GUI for reading Claude Code session JSONL files. Built with [Tauri v2]
 
 Reads session logs from `~/.claude/` and renders them as a scrollable conversation with expandable tool calls, token counts, and live tailing. Inspired by [tail-claude](https://github.com/kylesnowschwartz/tail-claude).
 
+<p align="center">
+  <img src="demo.gif" alt="Demo" />
+</p>
+
 ## Requirements
 
 - [Rust](https://rustup.rs/) 1.77+
