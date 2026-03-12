@@ -1052,8 +1052,7 @@ body {
   min-width: 0;
 }
 
-.agent-panel .message-detail__content,
-.agent-detail .message-detail__content {
+.agent-panel .message-detail__content {
   max-width: none;
 }
 
@@ -1830,8 +1829,8 @@ body {
 }
 
 .message-detail--split .message-detail__main {
-  flex: 0 0 35%;
-  min-width: 250px;
+  flex: 1 1 0;
+  min-width: 200px;
 }
 
 /* Ensure body scrolls within main pane */
@@ -1854,8 +1853,8 @@ body {
 
 /* Agent panel — reuses .message classes, tinted background */
 .agent-panel {
-  flex: 1 1 55%;
-  min-width: 300px;
+  flex: 1 1 0;
+  min-width: 200px;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -1956,35 +1955,9 @@ body {
   background: rgba(99, 179, 237, 0.08);
 }
 
-/* Agent detail (nested detail inside panel) — split for deeper nesting */
-.agent-detail {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.agent-detail--split {
-  flex-direction: row;
-}
-
-.agent-detail__main {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.agent-detail__main .message-detail__body {
+/* Agent panel content needs scrollable body */
+.agent-panel .message-detail__body {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
-}
-
-.agent-detail--split .agent-detail__main {
-  flex: 0 0 35%;
-  min-width: 220px;
 }
