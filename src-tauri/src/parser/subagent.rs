@@ -18,6 +18,10 @@ pub struct TokenSnapshot {
     pub cache_read: i64,
     pub cache_create: i64,
     pub model: String,
+    /// Whether the response completed (has a stop_reason).
+    /// Entries without stop_reason are partial streaming snapshots whose
+    /// output_tokens may be understated.
+    pub has_stop_reason: bool,
 }
 
 /// Pricing per million tokens for a model family.
@@ -53,6 +57,70 @@ fn pricing_for_model(model: &str) -> ModelPricing {
             cache_write: 3.75,
         }
     }
+}
+
+/// Insert a token snapshot, preferring entries with stop_reason (complete responses)
+/// over partial streaming snapshots with understated output_tokens.
+pub fn insert_best_snapshot(
+    map: &mut HashMap<String, TokenSnapshot>,
+    key: String,
+    snap: TokenSnapshot,
+) {
+    match map.get(&key) {
+        Some(existing) => {
+            // Prefer complete entries (has_stop_reason) over partial ones.
+            // Among same completeness, prefer higher output (later streaming = more tokens).
+            if (!existing.has_stop_reason && snap.has_stop_reason)
+                || (existing.has_stop_reason == snap.has_stop_reason
+                    && snap.output >= existing.output)
+            {
+                map.insert(key, snap);
+            }
+        }
+        None => {
+            map.insert(key, snap);
+        }
+    }
+}
+
+/// Estimate output tokens from assistant message content character count.
+/// Returns 0 if estimation is not possible.
+pub fn estimate_output_from_content(raw: &serde_json::Value) -> i64 {
+    let content = match raw.get("message").and_then(|m| m.get("content")) {
+        Some(c) => c,
+        None => return 0,
+    };
+    let arr = match content.as_array() {
+        Some(a) => a,
+        None => return 0,
+    };
+
+    let mut total_chars: i64 = 0;
+    for block in arr {
+        let btype = block.get("type").and_then(|v| v.as_str()).unwrap_or("");
+        match btype {
+            "text" => {
+                if let Some(t) = block.get("text").and_then(|v| v.as_str()) {
+                    total_chars += t.len() as i64;
+                }
+            }
+            "thinking" => {
+                if let Some(t) = block.get("thinking").and_then(|v| v.as_str()) {
+                    total_chars += t.len() as i64;
+                }
+            }
+            "tool_use" => {
+                // tool_use name + JSON input serialization
+                total_chars += 20; // name overhead
+                if let Some(input) = block.get("input") {
+                    total_chars += input.to_string().len() as i64;
+                }
+            }
+            _ => {}
+        }
+    }
+    // Rough estimate: ~4 characters per token for English text/code.
+    total_chars / 4
 }
 
 /// Compute cost in USD from a set of token snapshots, pricing each by its model.
@@ -848,16 +916,23 @@ pub fn scan_subagent_tokens_into(
             if inp + out + cr + cc == 0 {
                 continue;
             }
+            let has_stop = !raw
+                .get("message")
+                .and_then(|m| m.get("stop_reason"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .is_empty();
             let snap = TokenSnapshot {
                 input: inp,
                 output: out,
                 cache_read: cr,
                 cache_create: cc,
                 model: model.to_string(),
+                has_stop_reason: has_stop,
             };
             let req_id = raw.get("requestId").and_then(|v| v.as_str()).unwrap_or("");
             if !req_id.is_empty() {
-                request_tokens.insert(req_id.to_string(), snap);
+                insert_best_snapshot(request_tokens, req_id.to_string(), snap);
             } else {
                 fallback.input += inp;
                 fallback.output += out;

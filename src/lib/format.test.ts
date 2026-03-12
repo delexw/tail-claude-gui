@@ -132,37 +132,24 @@ describe("estimateCost", () => {
 // formatCost
 // ---------------------------------------------------------------------------
 describe("formatCost", () => {
-  it("formats >= $1 with 2 decimal places", () => {
+  it("always formats with 2 decimal places", () => {
     expect(formatCost(1.23)).toBe("$1.23");
     expect(formatCost(1.0)).toBe("$1.00");
     expect(formatCost(12.5)).toBe("$12.50");
     expect(formatCost(100)).toBe("$100.00");
+    expect(formatCost(0.05)).toBe("$0.05");
+    expect(formatCost(0.01)).toBe("$0.01");
+    expect(formatCost(0.999)).toBe("$1.00");
+    expect(formatCost(0.005)).toBe("$0.01");
+    expect(formatCost(0.001)).toBe("$0.00");
+    expect(formatCost(0)).toBe("$0.00");
   });
 
-  it("formats >= $0.01 with 3 decimal places", () => {
-    expect(formatCost(0.05)).toBe("$0.050");
-    expect(formatCost(0.01)).toBe("$0.010");
-    expect(formatCost(0.999)).toBe("$0.999");
-  });
-
-  it("formats >= $0.001 with 4 decimal places", () => {
-    expect(formatCost(0.005)).toBe("$0.0050");
-    expect(formatCost(0.001)).toBe("$0.0010");
-    expect(formatCost(0.0099)).toBe("$0.0099");
-  });
-
-  it("shows <$0.001 for very small amounts", () => {
-    expect(formatCost(0.0001)).toBe("<$0.001");
-    expect(formatCost(0.0009)).toBe("<$0.001");
-    expect(formatCost(0)).toBe("<$0.001");
-  });
-
-  it("handles boundary at exactly 1", () => {
-    expect(formatCost(1)).toBe("$1.00");
-  });
-
-  it("handles boundary at exactly 0.01", () => {
-    expect(formatCost(0.01)).toBe("$0.010");
+  it("rounds correctly", () => {
+    expect(formatCost(1.235)).toBe("$1.24");
+    expect(formatCost(1.234)).toBe("$1.23");
+    expect(formatCost(0.0099)).toBe("$0.01");
+    expect(formatCost(0.0049)).toBe("$0.00");
   });
 });
 

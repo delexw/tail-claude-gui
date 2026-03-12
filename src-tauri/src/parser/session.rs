@@ -448,15 +448,35 @@ pub(crate) fn scan_session_metadata(path: &str) -> SessionMetadata {
                 .unwrap_or("");
             if model_str != "<synthetic>" {
                 if let Some(usage) = raw.get("message").and_then(|m| m.get("usage")) {
+                    let has_stop = !raw
+                        .get("message")
+                        .and_then(|m| m.get("stop_reason"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .is_empty();
+
+                    let reported_output = usage
+                        .get("output_tokens")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(0);
+
+                    // For incomplete streaming entries (no stop_reason), the
+                    // output_tokens may be frozen at an early value while
+                    // content continued to stream. Use a content-based
+                    // estimate when it exceeds the reported value.
+                    let output = if has_stop {
+                        reported_output
+                    } else {
+                        let estimated = super::subagent::estimate_output_from_content(&raw);
+                        reported_output.max(estimated)
+                    };
+
                     let snap = TokenSnapshot {
                         input: usage
                             .get("input_tokens")
                             .and_then(|v| v.as_i64())
                             .unwrap_or(0),
-                        output: usage
-                            .get("output_tokens")
-                            .and_then(|v| v.as_i64())
-                            .unwrap_or(0),
+                        output,
                         cache_read: usage
                             .get("cache_read_input_tokens")
                             .and_then(|v| v.as_i64())
@@ -466,12 +486,17 @@ pub(crate) fn scan_session_metadata(path: &str) -> SessionMetadata {
                             .and_then(|v| v.as_i64())
                             .unwrap_or(0),
                         model: model_str.to_string(),
+                        has_stop_reason: has_stop,
                     };
 
                     let request_id = raw.get("requestId").and_then(|v| v.as_str()).unwrap_or("");
                     if !request_id.is_empty() {
-                        // Last-entry-wins: streaming entries share a requestId.
-                        request_tokens.insert(request_id.to_string(), snap);
+                        // Prefer complete entries over partial streaming snapshots.
+                        super::subagent::insert_best_snapshot(
+                            &mut request_tokens,
+                            request_id.to_string(),
+                            snap,
+                        );
                     } else {
                         // No requestId: sum directly.
                         meta.total_tokens +=
@@ -566,6 +591,7 @@ pub(crate) fn scan_session_metadata(path: &str) -> SessionMetadata {
         cache_read: 0,
         cache_create: 0,
         model: String::new(),
+        has_stop_reason: false,
     };
     super::subagent::scan_subagent_tokens_into(path, &mut request_tokens, &mut fallback);
     meta.total_tokens +=

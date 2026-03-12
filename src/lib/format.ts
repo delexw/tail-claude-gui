@@ -67,13 +67,10 @@ export function estimateCost(
 }
 
 /**
- * Formats a dollar amount: 0.0023 -> "$0.002", 1.23 -> "$1.23", 12.5 -> "$12.50"
+ * Formats a dollar amount: 0.0023 -> "$0.00", 1.23 -> "$1.23", 12.5 -> "$12.50"
  */
 export function formatCost(usd: number): string {
-  if (usd >= 1) return "$" + usd.toFixed(2);
-  if (usd >= 0.01) return "$" + usd.toFixed(3);
-  if (usd >= 0.001) return "$" + usd.toFixed(4);
-  return "<$0.001";
+  return "$" + usd.toFixed(2);
 }
 
 /**
