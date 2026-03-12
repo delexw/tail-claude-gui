@@ -331,6 +331,13 @@ body {
   background: transparent;
 }
 
+.project-tree__group-icon {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  opacity: 0.8;
+}
+
 /* ---- Info Bar ---- */
 
 .info-bar {
