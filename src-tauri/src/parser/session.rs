@@ -97,17 +97,31 @@ pub fn read_session_incremental(
     Ok((msgs, offset + bytes_read, bytes_read))
 }
 
+/// Return the Claude projects base directory.
+/// Priority: configured path > CLAUDE_PROJECTS_DIR env var > ~/.claude/projects.
+pub fn claude_projects_dir(configured: Option<&str>) -> Result<PathBuf, String> {
+    if let Some(dir) = configured {
+        let p = PathBuf::from(dir);
+        if p.exists() {
+            return Ok(p);
+        }
+    }
+    if let Ok(custom) = std::env::var("CLAUDE_PROJECTS_DIR") {
+        let p = PathBuf::from(&custom);
+        if p.exists() {
+            return Ok(p);
+        }
+    }
+    let home = dirs::home_dir().ok_or("no home directory")?;
+    Ok(home.join(".claude").join("projects"))
+}
+
 /// Return the Claude CLI projects directory for an absolute path.
 pub fn project_dir_for_path(abs_path: &str) -> Result<String, String> {
-    let home = dirs::home_dir().ok_or("no home directory")?;
+    let base = claude_projects_dir(None)?;
     let resolved = fs::canonicalize(abs_path).unwrap_or_else(|_| PathBuf::from(abs_path));
     let encoded = encode_path(&resolved.to_string_lossy());
-    Ok(home
-        .join(".claude")
-        .join("projects")
-        .join(encoded)
-        .to_string_lossy()
-        .to_string())
+    Ok(base.join(encoded).to_string_lossy().to_string())
 }
 
 fn encode_path(abs_path: &str) -> String {
@@ -824,6 +838,66 @@ fn scan_ongoing_user(
             }
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+
+    #[test]
+    fn claude_projects_dir_defaults_to_home() {
+        env::remove_var("CLAUDE_PROJECTS_DIR");
+        let dir = claude_projects_dir(None).unwrap();
+        let home = dirs::home_dir().unwrap();
+        assert_eq!(dir, home.join(".claude").join("projects"));
+    }
+
+    #[test]
+    fn claude_projects_dir_uses_configured_when_valid() {
+        let tmp = env::temp_dir().join("tail-test-projects-configured");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = claude_projects_dir(Some(tmp.to_str().unwrap())).unwrap();
+        assert_eq!(dir, tmp);
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn claude_projects_dir_uses_env_var_when_valid() {
+        let tmp = env::temp_dir().join("tail-test-projects-dir");
+        std::fs::create_dir_all(&tmp).unwrap();
+        env::set_var("CLAUDE_PROJECTS_DIR", tmp.to_str().unwrap());
+        let dir = claude_projects_dir(None).unwrap();
+        assert_eq!(dir, tmp);
+        env::remove_var("CLAUDE_PROJECTS_DIR");
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn claude_projects_dir_configured_takes_priority_over_env() {
+        let tmp_configured = env::temp_dir().join("tail-test-configured-priority");
+        let tmp_env = env::temp_dir().join("tail-test-env-priority");
+        std::fs::create_dir_all(&tmp_configured).unwrap();
+        std::fs::create_dir_all(&tmp_env).unwrap();
+        env::set_var("CLAUDE_PROJECTS_DIR", tmp_env.to_str().unwrap());
+        let dir = claude_projects_dir(Some(tmp_configured.to_str().unwrap())).unwrap();
+        assert_eq!(dir, tmp_configured);
+        env::remove_var("CLAUDE_PROJECTS_DIR");
+        std::fs::remove_dir_all(&tmp_configured).ok();
+        std::fs::remove_dir_all(&tmp_env).ok();
+    }
+
+    #[test]
+    fn claude_projects_dir_falls_back_when_env_path_missing() {
+        env::set_var(
+            "CLAUDE_PROJECTS_DIR",
+            "/nonexistent/path/that/does/not/exist",
+        );
+        let dir = claude_projects_dir(None).unwrap();
+        let home = dirs::home_dir().unwrap();
+        assert_eq!(dir, home.join(".claude").join("projects"));
+        env::remove_var("CLAUDE_PROJECTS_DIR");
     }
 }
 

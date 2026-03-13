@@ -1,5 +1,6 @@
 import type { ViewState } from "../types";
 import { BackIcon } from "./Icons";
+import { IoMdSettings } from "react-icons/io";
 
 interface ViewToolbarProps {
   view: ViewState;
@@ -14,6 +15,7 @@ interface ViewToolbarProps {
   onOpenTeams: () => void;
   onOpenDebug: () => void;
   onBackToList: () => void;
+  onOpenSettings: () => void;
 }
 
 export function ViewToolbar({
@@ -29,6 +31,7 @@ export function ViewToolbar({
   onOpenTeams,
   onOpenDebug,
   onBackToList,
+  onOpenSettings,
 }: ViewToolbarProps) {
   if (view === "list") {
     return (
@@ -58,18 +61,28 @@ export function ViewToolbar({
         <button className="view-toolbar__btn" onClick={onOpenDebug}>
           Debug
         </button>
+        <span className="view-toolbar__spacer" />
+        <button className="view-toolbar__btn" onClick={onOpenSettings} title="Settings">
+          <IoMdSettings />
+        </button>
       </div>
     );
   }
 
   if (view === "picker") {
-    return hasSession ? (
+    return (
       <div className="view-toolbar">
-        <button className="view-toolbar__btn" onClick={onBackToList}>
-          <BackIcon /> Back to Messages
+        {hasSession && (
+          <button className="view-toolbar__btn" onClick={onBackToList}>
+            <BackIcon /> Back to Messages
+          </button>
+        )}
+        <span className="view-toolbar__spacer" />
+        <button className="view-toolbar__btn" onClick={onOpenSettings} title="Settings">
+          <IoMdSettings />
         </button>
       </div>
-    ) : null;
+    );
   }
 
   // detail, team, debug views have their own back buttons

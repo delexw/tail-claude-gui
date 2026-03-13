@@ -15,6 +15,7 @@ import { KeybindBar } from "./components/KeybindBar";
 import { ViewToolbar } from "./components/ViewToolbar";
 import { ProjectTree, useProjectKeys } from "./components/ProjectTree";
 import { ResizeHandle } from "./components/ResizeHandle";
+import { SettingsModal } from "./components/SettingsModal";
 
 export function App() {
   const [view, setView] = useState<ViewState>("picker");
@@ -26,6 +27,7 @@ export function App() {
   const [sidebarWidth, setSidebarWidth] = useState(180);
   const [sidebarFocused, setSidebarFocused] = useState(false);
   const [sidebarHighlight, setSidebarHighlight] = useState(0); // index in project list (0 = "All")
+  const [showSettings, setShowSettings] = useState(false);
 
   const handleSelectProject = useCallback(
     (project: string | null) => {
@@ -60,12 +62,25 @@ export function App() {
     return () => clearInterval(id);
   }, [session.ongoing]);
 
-  // Auto-discover sessions on mount
+  // Auto-discover sessions on mount; show settings if no path configured
   const discoveredRef = useRef(false);
   useEffect(() => {
     if (discoveredRef.current) return;
     discoveredRef.current = true;
     const discover = async () => {
+      // Check if user has configured a projects path
+      let hasConfig = false;
+      try {
+        const settings = await invoke<{ projects_dir: string | null }>("get_settings");
+        hasConfig = settings.projects_dir != null;
+      } catch {
+        // no settings file yet
+      }
+      if (!hasConfig) {
+        setShowSettings(true);
+        return;
+      }
+      // Only load sessions if a path has been saved
       try {
         const dirs = await invoke<string[]>("get_project_dirs");
         if (dirs.length > 0) {
@@ -350,6 +365,7 @@ export function App() {
         onOpenTeams={openTeams}
         onOpenDebug={openDebug}
         onBackToList={backToList}
+        onOpenSettings={() => setShowSettings(true)}
       />
 
       <div className="app-body">
@@ -378,6 +394,10 @@ export function App() {
         onToggle={toggleKeybinds}
         actions={keybindActions}
       />
+
+      {showSettings && (
+        <SettingsModal onClose={() => setShowSettings(false)} onSaved={refreshSessions} />
+      )}
     </div>
   );
 }

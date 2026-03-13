@@ -11,6 +11,8 @@ permissions = [
   "allow-watch-picker",
   "allow-unwatch-picker",
   "allow-get-project-dirs",
+  "allow-get-settings",
+  "allow-set-projects-dir",
 ]
 
 [[permission]]
@@ -62,3 +64,13 @@ commands.allow = ["unwatch_picker"]
 identifier = "allow-get-project-dirs"
 description = "Allow getting project directories"
 commands.allow = ["get_project_dirs"]
+
+[[permission]]
+identifier = "allow-get-settings"
+description = "Allow reading app settings"
+commands.allow = ["get_settings"]
+
+[[permission]]
+identifier = "allow-set-projects-dir"
+description = "Allow setting the projects directory"
+commands.allow = ["set_projects_dir"]

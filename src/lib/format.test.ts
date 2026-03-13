@@ -516,6 +516,14 @@ describe("projectKey", () => {
   it("handles project key with special characters", () => {
     expect(projectKey("/Users/x/.claude/projects/proj_123-abc/session.jsonl")).toBe("proj_123-abc");
   });
+
+  it("extracts project key from Windows-style path", () => {
+    expect(projectKey("C:\\Users\\x\\.claude\\projects\\foo-bar\\session.jsonl")).toBe("foo-bar");
+  });
+
+  it("extracts project key from Windows path with mixed separators", () => {
+    expect(projectKey("C:\\Users\\x\\.claude\\projects\\my-proj/session.jsonl")).toBe("my-proj");
+  });
 });
 
 // ---------------------------------------------------------------------------

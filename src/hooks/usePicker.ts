@@ -99,7 +99,7 @@ export function usePicker(selectedProject: string | null = null) {
   // Filter by selected project
   if (selectedProject) {
     filteredSessions = filteredSessions.filter((s) =>
-      s.path.includes(`/.claude/projects/${selectedProject}/`),
+      s.path.replace(/\\/g, "/").includes(`/.claude/projects/${selectedProject}/`),
     );
   }
 

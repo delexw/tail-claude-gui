@@ -16,6 +16,7 @@ function defaultProps(overrides: Partial<Parameters<typeof ViewToolbar>[0]> = {}
     onOpenTeams: vi.fn(),
     onOpenDebug: vi.fn(),
     onBackToList: vi.fn(),
+    onOpenSettings: vi.fn(),
     ...overrides,
   };
 }
@@ -94,11 +95,16 @@ describe("ViewToolbar", () => {
       expect(props.onBackToList).toHaveBeenCalled();
     });
 
-    it("renders null when hasSession=false", () => {
-      const { container } = render(
-        <ViewToolbar {...defaultProps({ view: "picker", hasSession: false })} />,
-      );
-      expect(container.innerHTML).toBe("");
+    it("shows settings button even when hasSession=false", () => {
+      render(<ViewToolbar {...defaultProps({ view: "picker", hasSession: false })} />);
+      expect(screen.getByTitle("Settings")).toBeInTheDocument();
+    });
+
+    it("calls onOpenSettings when settings button clicked", () => {
+      const props = defaultProps({ view: "picker", hasSession: false });
+      render(<ViewToolbar {...props} />);
+      fireEvent.click(screen.getByTitle("Settings"));
+      expect(props.onOpenSettings).toHaveBeenCalled();
     });
   });
 

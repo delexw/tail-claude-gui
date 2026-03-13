@@ -1,6 +1,7 @@
 use std::sync::Mutex;
 
 use crate::parser::cache::SessionCache;
+use crate::settings::Settings;
 use crate::watcher::WatcherHandle;
 
 /// AppState holds shared state managed by Tauri.
@@ -8,6 +9,7 @@ pub struct AppState {
     pub session_watcher: Mutex<Option<WatcherHandle>>,
     pub picker_watcher: Mutex<Option<WatcherHandle>>,
     pub session_cache: Mutex<SessionCache>,
+    pub settings: Mutex<Settings>,
 }
 
 impl AppState {
@@ -16,6 +18,7 @@ impl AppState {
             session_watcher: Mutex::new(None),
             picker_watcher: Mutex::new(None),
             session_cache: Mutex::new(SessionCache::new()),
+            settings: Mutex::new(crate::settings::load_settings()),
         }
     }
 

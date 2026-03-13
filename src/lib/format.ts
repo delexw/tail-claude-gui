@@ -220,7 +220,7 @@ export function formatJson(input: string): string {
  * Extract the encoded project directory key from a session path.
  */
 export function projectKey(path: string): string {
-  const match = path.match(/\/\.claude\/projects\/([^/]+)/);
+  const match = path.match(/[/\\]\.claude[/\\]projects[/\\]([^/\\]+)/);
   return match ? match[1] : "unknown";
 }
 

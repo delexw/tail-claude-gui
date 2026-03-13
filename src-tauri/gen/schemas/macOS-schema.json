@@ -2145,10 +2145,10 @@
       "description": "Permission identifier",
       "oneOf": [
         {
-          "description": "Default permissions for all tail-claude-gui commands\n#### This default permission set includes:\n\n- `allow-discover-sessions`\n- `allow-load-session`\n- `allow-get-session-meta`\n- `allow-watch-session`\n- `allow-unwatch-session`\n- `allow-get-git-info`\n- `allow-get-debug-log`\n- `allow-watch-picker`\n- `allow-unwatch-picker`\n- `allow-get-project-dirs`",
+          "description": "Default permissions for all tail-claude-gui commands\n#### This default permission set includes:\n\n- `allow-discover-sessions`\n- `allow-load-session`\n- `allow-get-session-meta`\n- `allow-watch-session`\n- `allow-unwatch-session`\n- `allow-get-git-info`\n- `allow-get-debug-log`\n- `allow-watch-picker`\n- `allow-unwatch-picker`\n- `allow-get-project-dirs`\n- `allow-get-settings`\n- `allow-set-projects-dir`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for all tail-claude-gui commands\n#### This default permission set includes:\n\n- `allow-discover-sessions`\n- `allow-load-session`\n- `allow-get-session-meta`\n- `allow-watch-session`\n- `allow-unwatch-session`\n- `allow-get-git-info`\n- `allow-get-debug-log`\n- `allow-watch-picker`\n- `allow-unwatch-picker`\n- `allow-get-project-dirs`"
+          "markdownDescription": "Default permissions for all tail-claude-gui commands\n#### This default permission set includes:\n\n- `allow-discover-sessions`\n- `allow-load-session`\n- `allow-get-session-meta`\n- `allow-watch-session`\n- `allow-unwatch-session`\n- `allow-get-git-info`\n- `allow-get-debug-log`\n- `allow-watch-picker`\n- `allow-unwatch-picker`\n- `allow-get-project-dirs`\n- `allow-get-settings`\n- `allow-set-projects-dir`"
         },
         {
           "description": "Allow discovering sessions across project directories",
@@ -2181,10 +2181,22 @@
           "markdownDescription": "Allow getting session metadata"
         },
         {
+          "description": "Allow reading app settings",
+          "type": "string",
+          "const": "allow-get-settings",
+          "markdownDescription": "Allow reading app settings"
+        },
+        {
           "description": "Allow loading a session file",
           "type": "string",
           "const": "allow-load-session",
           "markdownDescription": "Allow loading a session file"
+        },
+        {
+          "description": "Allow setting the projects directory",
+          "type": "string",
+          "const": "allow-set-projects-dir",
+          "markdownDescription": "Allow setting the projects directory"
         },
         {
           "description": "Allow stopping picker watching",

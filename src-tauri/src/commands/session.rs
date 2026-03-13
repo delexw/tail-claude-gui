@@ -92,12 +92,17 @@ pub async fn watch_session(
     Ok(())
 }
 
-/// Return all project directories under ~/.claude/projects/.
+/// Return all project directories under the Claude projects base directory.
 /// Each subdirectory corresponds to an encoded project path.
 #[tauri::command]
-pub async fn get_project_dirs() -> Result<Vec<String>, String> {
-    let home = dirs::home_dir().ok_or("no home directory")?;
-    let projects_dir = home.join(".claude").join("projects");
+pub async fn get_project_dirs(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    let configured = state
+        .settings
+        .lock()
+        .map_err(|e| e.to_string())?
+        .projects_dir
+        .clone();
+    let projects_dir = crate::parser::session::claude_projects_dir(configured.as_deref())?;
     if !projects_dir.exists() {
         return Ok(Vec::new());
     }

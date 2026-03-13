@@ -3,6 +3,7 @@
 mod commands;
 mod convert;
 mod parser;
+mod settings;
 mod state;
 mod watcher;
 
@@ -22,6 +23,8 @@ pub fn run() {
             commands::picker::unwatch_picker,
             commands::git::get_git_info,
             commands::debug::get_debug_log,
+            commands::settings::get_settings,
+            commands::settings::set_projects_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

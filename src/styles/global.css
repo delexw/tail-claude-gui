@@ -166,7 +166,6 @@
   padding: 0;
 }
 
-
 html,
 body,
 #root {
@@ -1600,6 +1599,7 @@ body {
 }
 
 .popout-modal__close {
+  margin-left: auto;
   background: none;
   border: none;
   color: var(--text-dim);
@@ -1607,7 +1607,6 @@ body {
   font-size: 18px;
   padding: 2px 6px;
   border-radius: 3px;
-  margin-left: 8px;
   display: inline-flex;
   align-items: center;
 }
@@ -2217,4 +2216,97 @@ body {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+}
+
+/* ============================================================
+   Settings Modal
+   ============================================================ */
+
+.view-toolbar__spacer {
+  flex: 1;
+}
+
+.settings-modal__title {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.settings-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+}
+
+.settings-modal__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.settings-modal__input {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  box-sizing: border-box;
+  outline: none;
+}
+
+.settings-modal__input:focus {
+  border-color: var(--accent);
+}
+
+.settings-modal__hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.settings-modal__error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--error);
+}
+
+.settings-modal__actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.settings-modal__btn {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.settings-modal__btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.settings-modal__btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.settings-modal__btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.settings-modal__btn--primary:hover:not(:disabled) {
+  background: #4a9aee;
 }
