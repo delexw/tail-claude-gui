@@ -1494,15 +1494,6 @@ body {
   color: var(--accent);
 }
 
-.detail-item__ongoing-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--ongoing);
-  animation: pulse 1.5s ease-in-out infinite;
-}
-
 .detail-item__orphan-badge {
   display: inline-flex;
   align-items: center;
