@@ -666,25 +666,22 @@ pub fn inject_orphan_subagents(chunks: &mut Vec<Chunk>, processes: &mut [Subagen
         }
     };
 
-    for (insert_pos, &oi) in orphan_indices.iter().enumerate() {
+    for &oi in &orphan_indices {
         let synthetic_tool_id = format!("orphan-{}", processes[oi].id);
         // Set parent_task_id so convert_display_items can link via proc_by_task_id.
         processes[oi].parent_task_id = synthetic_tool_id.clone();
 
-        chunks[idx].items.insert(
-            insert_pos,
-            DisplayItem {
-                item_type: DisplayItemType::Subagent,
-                tool_name: "Agent".to_string(),
-                tool_id: synthetic_tool_id,
-                subagent_type: processes[oi].subagent_type.clone(),
-                subagent_desc: processes[oi].description.clone(),
-                is_orphan: true,
-                duration_ms: processes[oi].duration_ms,
-                token_count: processes[oi].usage.total_tokens() as usize / 4,
-                ..Default::default()
-            },
-        );
+        chunks[idx].items.push(DisplayItem {
+            item_type: DisplayItemType::Subagent,
+            tool_name: "Agent".to_string(),
+            tool_id: synthetic_tool_id,
+            subagent_type: processes[oi].subagent_type.clone(),
+            subagent_desc: processes[oi].description.clone(),
+            is_orphan: true,
+            duration_ms: processes[oi].duration_ms,
+            token_count: processes[oi].usage.total_tokens() as usize / 4,
+            ..Default::default()
+        });
     }
 }
 
@@ -1281,6 +1278,49 @@ mod tests {
             !skill_item.subagent_messages.is_empty(),
             "Skill item should have child's subagent_messages"
         );
+    }
+
+    #[test]
+    fn orphan_subagents_appended_after_existing_items() {
+        use chrono::TimeZone;
+
+        let existing_item = DisplayItem {
+            item_type: DisplayItemType::ToolCall,
+            tool_name: "Bash".to_string(),
+            tool_id: "toolu_existing".to_string(),
+            ..Default::default()
+        };
+
+        let mut chunks = vec![Chunk {
+            chunk_type: ChunkType::AI,
+            timestamp: Utc.with_ymd_and_hms(2026, 3, 12, 21, 20, 0).unwrap(),
+            items: vec![existing_item],
+            ..Default::default()
+        }];
+
+        let mut procs = vec![SubagentProcess {
+            id: "orphan-agent".to_string(),
+            parent_task_id: String::new(), // orphan: no parent
+            subagent_type: "general-purpose".to_string(),
+            description: "orphan desc".to_string(),
+            start_time: Utc.with_ymd_and_hms(2026, 3, 12, 21, 21, 0).unwrap(),
+            chunks: vec![Chunk {
+                chunk_type: ChunkType::AI,
+                ..Default::default()
+            }],
+            ..Default::default()
+        }];
+
+        inject_orphan_subagents(&mut chunks, &mut procs);
+
+        let items = &chunks[0].items;
+        assert_eq!(items.len(), 2, "should have existing item + orphan");
+        assert_eq!(
+            items[0].tool_name, "Bash",
+            "existing item should remain first"
+        );
+        assert!(items[1].is_orphan, "orphan should be appended at the end");
+        assert_eq!(items[1].subagent_type, "general-purpose");
     }
 
     #[test]
