@@ -26,10 +26,10 @@ Reads session logs from `~/.claude/` and renders them as a scrollable conversati
 
 Grab the latest release from [Releases](https://github.com/delexw/tail-claude-gui/releases):
 
-| Platform | File |
-| -------- | ---- |
-| macOS    | `.dmg` |
-| Linux    | `.deb`, `.rpm`, `.AppImage` |
+| Platform | File                            |
+| -------- | ------------------------------- |
+| macOS    | `.dmg`                          |
+| Linux    | `.deb`, `.rpm`, `.AppImage`     |
 | Windows  | `.msi`, `.exe` (NSIS installer) |
 
 > **macOS:** The app is unsigned. On first launch, right-click > Open > Open to bypass Gatekeeper.
