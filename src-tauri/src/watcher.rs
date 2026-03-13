@@ -8,7 +8,7 @@ use crate::convert::*;
 use crate::parser::chunk::build_chunks;
 use crate::parser::classify::ClassifiedMsg;
 use crate::parser::ongoing::{is_ongoing, is_subagent_ongoing};
-use crate::parser::session::read_session_incremental;
+use crate::parser::session::{read_session_incremental, IncrementalTokenScanner};
 use crate::parser::subagent::{discover_and_link_all, inject_orphan_subagents};
 use crate::parser::team::reconstruct_teams;
 
@@ -119,6 +119,11 @@ pub fn start_session_watcher(
     tauri::async_runtime::spawn(async move {
         let mut all_classified = initial_classified;
         let mut offset = initial_offset;
+        let mut token_scanner = IncrementalTokenScanner::new();
+        let mut prev_msg_count: usize = 0;
+
+        // Seed the token scanner with the initial file content.
+        token_scanner.scan_new_bytes(&path_for_rebuild);
 
         loop {
             tokio::select! {
@@ -150,6 +155,16 @@ pub fn start_session_watcher(
                     let teams = reconstruct_teams(&chunks, &all_procs);
                     let messages = chunks_to_messages(&chunks, &all_procs, &color_map);
 
+                    // Skip emit if nothing meaningful changed.
+                    let msg_count = messages.len();
+                    if msg_count == prev_msg_count && !ongoing {
+                        // Token totals may still have changed — update scanner
+                        // but skip the expensive emit + serialize.
+                        token_scanner.scan_new_bytes(&path_for_rebuild);
+                        continue;
+                    }
+                    prev_msg_count = msg_count;
+
                     // Extract last permission_mode from UserMsg entries.
                     let mut permission_mode = String::from("default");
                     for msg in all_classified.iter().rev() {
@@ -161,17 +176,8 @@ pub fn start_session_watcher(
                         }
                     }
 
-                    // Scan main session + subagent files with global requestId dedup.
-                    let scanned = crate::parser::session::scan_session_metadata(&path_for_rebuild);
-                    let session_totals = crate::convert::SessionTotals {
-                        total_tokens: scanned.total_tokens,
-                        input_tokens: scanned.input_tokens,
-                        output_tokens: scanned.output_tokens,
-                        cache_read_tokens: scanned.cache_read_tokens,
-                        cache_creation_tokens: scanned.cache_creation_tokens,
-                        cost_usd: scanned.cost_usd,
-                        model: scanned.model,
-                    };
+                    // Incrementally scan only new bytes for token totals.
+                    let session_totals = token_scanner.scan_new_bytes(&path_for_rebuild);
 
                     let payload = SessionUpdatePayload {
                         messages,

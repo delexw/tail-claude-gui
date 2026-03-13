@@ -644,6 +644,258 @@ pub(crate) fn scan_session_metadata(path: &str) -> SessionMetadata {
     meta
 }
 
+/// Incremental token scanner for the watcher — avoids re-reading the entire file.
+///
+/// Keeps a running `request_tokens` map and byte offset so that each call to
+/// `scan_new_bytes` only reads the newly appended portion of the main session
+/// file. Subagent files are rescanned only when their size changes.
+pub struct IncrementalTokenScanner {
+    /// Byte offset into the main session file (how far we've read).
+    offset: u64,
+    /// Per-requestId best token snapshot (global dedup across main + subagents).
+    request_tokens: HashMap<String, super::subagent::TokenSnapshot>,
+    /// Accumulated tokens from entries without a requestId.
+    fallback: super::subagent::TokenSnapshot,
+    /// Model string (first real non-sidechain assistant model).
+    model: String,
+    /// Cached subagent file sizes — only rescan files that grew.
+    subagent_sizes: HashMap<String, u64>,
+    /// Per-subagent byte offsets for incremental reading.
+    subagent_offsets: HashMap<String, u64>,
+}
+
+impl IncrementalTokenScanner {
+    pub fn new() -> Self {
+        Self {
+            offset: 0,
+            request_tokens: HashMap::new(),
+            fallback: super::subagent::TokenSnapshot {
+                input: 0,
+                output: 0,
+                cache_read: 0,
+                cache_create: 0,
+                model: String::new(),
+                has_stop_reason: false,
+            },
+            model: String::new(),
+            subagent_sizes: HashMap::new(),
+            subagent_offsets: HashMap::new(),
+        }
+    }
+
+    /// Scan only new bytes from the main session file and any changed subagent files.
+    /// Returns the current totals.
+    pub fn scan_new_bytes(&mut self, path: &str) -> crate::convert::SessionTotals {
+        // 1. Read new bytes from main session file.
+        self.scan_main_file(path);
+
+        // 2. Incrementally scan subagent files (only changed ones).
+        self.scan_subagents_incremental(path);
+
+        // 3. Compute totals from accumulated state.
+        self.compute_totals()
+    }
+
+    fn scan_main_file(&mut self, path: &str) {
+        let f = match fs::File::open(path) {
+            Ok(f) => f,
+            Err(_) => return,
+        };
+        let mut reader = BufReader::new(f);
+        if reader.seek(SeekFrom::Start(self.offset)).is_err() {
+            return;
+        }
+
+        let mut line = String::new();
+        loop {
+            line.clear();
+            let n = match reader.read_line(&mut line) {
+                Ok(n) => n,
+                Err(_) => break,
+            };
+            if n == 0 {
+                break;
+            }
+            self.offset += n as u64;
+            self.process_line(line.trim(), false);
+        }
+    }
+
+    fn scan_subagents_incremental(&mut self, session_path: &str) {
+        let dir = super::subagent::subagents_dir(session_path);
+        let entries = match fs::read_dir(&dir) {
+            Ok(e) => e,
+            Err(_) => return,
+        };
+
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !name.starts_with("agent-") || !name.ends_with(".jsonl") {
+                continue;
+            }
+            let file_path = dir.join(&name);
+            let key = file_path.to_string_lossy().to_string();
+
+            // Check if file has grown since last scan.
+            let current_size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+            let prev_size = self.subagent_sizes.get(&key).copied().unwrap_or(0);
+            if current_size <= prev_size {
+                continue;
+            }
+            self.subagent_sizes.insert(key.clone(), current_size);
+
+            // Read from where we left off.
+            let sub_offset = self.subagent_offsets.get(&key).copied().unwrap_or(0);
+            let f = match fs::File::open(&file_path) {
+                Ok(f) => f,
+                Err(_) => continue,
+            };
+            let mut reader = BufReader::new(f);
+            if reader.seek(SeekFrom::Start(sub_offset)).is_err() {
+                continue;
+            }
+
+            let mut new_offset = sub_offset;
+            let mut line = String::new();
+            loop {
+                line.clear();
+                let n = match reader.read_line(&mut line) {
+                    Ok(n) => n,
+                    Err(_) => break,
+                };
+                if n == 0 {
+                    break;
+                }
+                new_offset += n as u64;
+                self.process_line(line.trim(), true);
+            }
+            self.subagent_offsets.insert(key, new_offset);
+        }
+    }
+
+    fn process_line(&mut self, line: &str, _is_subagent: bool) {
+        let raw: Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => return,
+        };
+
+        let entry_type = raw.get("type").and_then(|v| v.as_str()).unwrap_or("");
+        if entry_type != "assistant" {
+            return;
+        }
+
+        let model_str = raw
+            .get("message")
+            .and_then(|m| m.get("model"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if model_str == "<synthetic>" {
+            return;
+        }
+
+        let usage = match raw.get("message").and_then(|m| m.get("usage")) {
+            Some(u) => u,
+            None => return,
+        };
+
+        let has_stop = !raw
+            .get("message")
+            .and_then(|m| m.get("stop_reason"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .is_empty();
+
+        let reported_output = usage
+            .get("output_tokens")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+
+        let output = if has_stop {
+            reported_output
+        } else {
+            let estimated = super::subagent::estimate_output_from_content(&raw);
+            reported_output.max(estimated)
+        };
+
+        let inp = usage
+            .get("input_tokens")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let cr = usage
+            .get("cache_read_input_tokens")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let cc = usage
+            .get("cache_creation_input_tokens")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+
+        if inp + output + cr + cc == 0 {
+            return;
+        }
+
+        let snap = super::subagent::TokenSnapshot {
+            input: inp,
+            output,
+            cache_read: cr,
+            cache_create: cc,
+            model: model_str.to_string(),
+            has_stop_reason: has_stop,
+        };
+
+        let request_id = raw.get("requestId").and_then(|v| v.as_str()).unwrap_or("");
+        if !request_id.is_empty() {
+            super::subagent::insert_best_snapshot(
+                &mut self.request_tokens,
+                request_id.to_string(),
+                snap,
+            );
+        } else {
+            self.fallback.input += inp;
+            self.fallback.output += output;
+            self.fallback.cache_read += cr;
+            self.fallback.cache_create += cc;
+        }
+
+        // Capture model from first real entry.
+        if self.model.is_empty() && !model_str.is_empty() {
+            self.model = model_str.to_string();
+        }
+    }
+
+    fn compute_totals(&self) -> crate::convert::SessionTotals {
+        let mut total_tokens = self.fallback.input
+            + self.fallback.output
+            + self.fallback.cache_read
+            + self.fallback.cache_create;
+        let mut input_tokens = self.fallback.input;
+        let mut output_tokens = self.fallback.output;
+        let mut cache_read_tokens = self.fallback.cache_read;
+        let mut cache_creation_tokens = self.fallback.cache_create;
+
+        for snap in self.request_tokens.values() {
+            total_tokens += snap.input + snap.output + snap.cache_read + snap.cache_create;
+            input_tokens += snap.input;
+            output_tokens += snap.output;
+            cache_read_tokens += snap.cache_read;
+            cache_creation_tokens += snap.cache_create;
+        }
+
+        let cost_usd =
+            super::subagent::estimate_cost_from_snapshots(&self.request_tokens, &self.fallback);
+
+        crate::convert::SessionTotals {
+            total_tokens,
+            input_tokens,
+            output_tokens,
+            cache_read_tokens,
+            cache_creation_tokens,
+            cost_usd,
+            model: self.model.clone(),
+        }
+    }
+}
+
 /// Mirrors claude-devtools' isParsedUserChunkMessage.
 fn is_user_chunk_for_turn_count(
     raw: &Value,
@@ -898,6 +1150,95 @@ mod tests {
         let home = dirs::home_dir().unwrap();
         assert_eq!(dir, home.join(".claude").join("projects"));
         env::remove_var("CLAUDE_PROJECTS_DIR");
+    }
+
+    #[test]
+    fn incremental_scanner_empty_file() {
+        let tmp = env::temp_dir().join("tail-test-scanner-empty");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let path = tmp.join("session.jsonl");
+        std::fs::write(&path, "").unwrap();
+
+        let mut scanner = IncrementalTokenScanner::new();
+        let totals = scanner.scan_new_bytes(path.to_str().unwrap());
+        assert_eq!(totals.total_tokens, 0);
+        assert_eq!(totals.cost_usd, 0.0);
+        assert!(totals.model.is_empty());
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn incremental_scanner_accumulates_tokens() {
+        let tmp = env::temp_dir().join("tail-test-scanner-accum");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let path = tmp.join("session.jsonl");
+
+        // Write first entry.
+        let entry1 = r#"{"type":"assistant","uuid":"a1","requestId":"r1","message":{"model":"claude-sonnet-4-20250514","role":"assistant","content":[],"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"stop_reason":"end_turn"}}"#;
+        std::fs::write(&path, format!("{entry1}\n")).unwrap();
+
+        let mut scanner = IncrementalTokenScanner::new();
+        let totals1 = scanner.scan_new_bytes(path.to_str().unwrap());
+        assert_eq!(totals1.input_tokens, 100);
+        assert_eq!(totals1.output_tokens, 50);
+        assert_eq!(totals1.total_tokens, 150);
+        assert_eq!(totals1.model, "claude-sonnet-4-20250514");
+
+        // Append second entry with different requestId.
+        let entry2 = r#"{"type":"assistant","uuid":"a2","requestId":"r2","message":{"model":"claude-sonnet-4-20250514","role":"assistant","content":[],"usage":{"input_tokens":200,"output_tokens":80,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"stop_reason":"end_turn"}}"#;
+        use std::io::Write;
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        writeln!(f, "{entry2}").unwrap();
+
+        // Second scan should only read the new bytes.
+        let totals2 = scanner.scan_new_bytes(path.to_str().unwrap());
+        assert_eq!(totals2.input_tokens, 300);
+        assert_eq!(totals2.output_tokens, 130);
+        assert_eq!(totals2.total_tokens, 430);
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn incremental_scanner_deduplicates_request_ids() {
+        let tmp = env::temp_dir().join("tail-test-scanner-dedup");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let path = tmp.join("session.jsonl");
+
+        // Two entries with same requestId — scanner should keep the one with stop_reason.
+        let streaming = r#"{"type":"assistant","uuid":"a1","requestId":"r1","message":{"model":"claude-sonnet-4-20250514","role":"assistant","content":[],"usage":{"input_tokens":100,"output_tokens":20,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}"#;
+        let complete = r#"{"type":"assistant","uuid":"a2","requestId":"r1","message":{"model":"claude-sonnet-4-20250514","role":"assistant","content":[],"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"stop_reason":"end_turn"}}"#;
+        std::fs::write(&path, format!("{streaming}\n{complete}\n")).unwrap();
+
+        let mut scanner = IncrementalTokenScanner::new();
+        let totals = scanner.scan_new_bytes(path.to_str().unwrap());
+        // Should use the complete entry (50 output), not streaming (20).
+        assert_eq!(totals.input_tokens, 100);
+        assert_eq!(totals.output_tokens, 50);
+        assert_eq!(totals.total_tokens, 150);
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn incremental_scanner_skips_non_assistant_lines() {
+        let tmp = env::temp_dir().join("tail-test-scanner-skip");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let path = tmp.join("session.jsonl");
+
+        let user_entry = r#"{"type":"user","uuid":"u1","message":{"content":"hello"}}"#;
+        let assistant_entry = r#"{"type":"assistant","uuid":"a1","requestId":"r1","message":{"model":"claude-sonnet-4-20250514","role":"assistant","content":[],"usage":{"input_tokens":50,"output_tokens":25,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"stop_reason":"end_turn"}}"#;
+        std::fs::write(&path, format!("{user_entry}\n{assistant_entry}\n")).unwrap();
+
+        let mut scanner = IncrementalTokenScanner::new();
+        let totals = scanner.scan_new_bytes(path.to_str().unwrap());
+        assert_eq!(totals.total_tokens, 75);
+
+        std::fs::remove_dir_all(&tmp).ok();
     }
 }
 
