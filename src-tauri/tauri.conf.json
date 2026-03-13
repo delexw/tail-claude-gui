@@ -1,6 +1,6 @@
 {
   "productName": "tail-claude-gui",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "identifier": "com.tailclaude.gui",
   "build": {
     "devUrl": "http://localhost:1420",
