@@ -11,8 +11,8 @@ interface MessageItemProps {
   isExpanded: boolean;
   onClick: (index: number) => void;
   onOpenDetail: (index: number) => void;
-  /** Optional extra header content (e.g. ongoing spinner) */
-  headerExtra?: React.ReactNode;
+  /** Whether this message is currently being processed */
+  isOngoing?: boolean;
   ref?: React.Ref<HTMLDivElement>;
 }
 
@@ -24,7 +24,7 @@ export function MessageItem({
   isExpanded,
   onClick,
   onOpenDetail,
-  headerExtra,
+  isOngoing,
 }: MessageItemProps) {
   const roleClass =
     msg.role === "user"
@@ -70,11 +70,19 @@ export function MessageItem({
             {model}
           </span>
         )}
+        {isOngoing && (
+          <span className="message__ongoing-dots">
+            <span className="project-tree__ongoing-dot" />
+            <span className="project-tree__ongoing-dot" />
+            <span className="project-tree__ongoing-dot" />
+            <span className="project-tree__ongoing-dot" />
+            <span className="project-tree__ongoing-dot" />
+          </span>
+        )}
         {msg.subagent_label && (
           <span className="detail-item__subagent-badge">{msg.subagent_label}</span>
         )}
         {time && <span className="message__timestamp">{time}</span>}
-        {headerExtra}
         {(msg.items.length > 0 || msg.tool_call_count > 0 || msg.thinking_count > 0) && (
           <button
             className="message__detail-btn"

@@ -1,7 +1,6 @@
 import { useRef, useCallback, useMemo } from "react";
 import { useScrollToSelected } from "../hooks/useScrollToSelected";
 import type { DisplayMessage } from "../types";
-import { spinnerFrames } from "../lib/theme";
 import { MessageItem } from "./MessageItem";
 
 interface MessageListProps {
@@ -9,7 +8,6 @@ interface MessageListProps {
   selectedIndex: number;
   expandedSet: Set<number>;
   ongoing: boolean;
-  animFrame: number;
   onSelect: (index: number) => void;
   onToggle: (index: number) => void;
   onOpenDetail: (index: number) => void;
@@ -20,7 +18,6 @@ export function MessageList({
   selectedIndex,
   expandedSet,
   ongoing,
-  animFrame,
   onSelect,
   onToggle,
   onOpenDetail,
@@ -65,7 +62,7 @@ export function MessageList({
         }
 
         const isSelected = i === selectedIndex;
-        const isFirst = i === 0;
+        const isLast = i === messages.length - 1;
 
         return (
           <MessageItem
@@ -77,13 +74,7 @@ export function MessageList({
             isExpanded={expandedSet.has(i)}
             onClick={handleClick}
             onOpenDetail={onOpenDetail}
-            headerExtra={
-              isFirst && ongoing ? (
-                <span className="message__ongoing-spinner">
-                  {spinnerFrames[animFrame % spinnerFrames.length]}
-                </span>
-              ) : undefined
-            }
+            isOngoing={isLast && ongoing}
           />
         );
       })}

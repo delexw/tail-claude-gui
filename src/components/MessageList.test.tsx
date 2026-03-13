@@ -35,7 +35,6 @@ function defaultProps(overrides: Partial<Parameters<typeof MessageList>[0]> = {}
     selectedIndex: -1,
     expandedSet: new Set<number>(),
     ongoing: false,
-    animFrame: 0,
     onSelect: vi.fn(),
     onToggle: vi.fn(),
     onOpenDetail: vi.fn(),
@@ -187,21 +186,20 @@ describe("MessageList", () => {
     expect(screen.getByText(/1 agent/)).toBeInTheDocument();
   });
 
-  it("shows ongoing spinner for first message when ongoing", () => {
+  it("shows ongoing dots for last message when ongoing", () => {
     const messages = [
       makeMessage({ role: "user", content: "First" }),
       makeMessage({ role: "claude", content: "Second", model: "claude-sonnet-4-20250514" }),
     ];
     const { container } = render(<MessageList {...defaultProps({ messages, ongoing: true })} />);
-    // First message (index 0) is rendered last in reversed view
-    // The ongoing spinner should be on index 0 which has isFirst=true
-    const spinners = container.querySelectorAll(".message__ongoing-spinner");
-    expect(spinners.length).toBe(1);
+    // The ongoing dots should be on the last message (the one actively being processed)
+    const dots = container.querySelectorAll(".message__ongoing-dots");
+    expect(dots.length).toBe(1);
   });
 
-  it("does not show ongoing spinner when ongoing=false", () => {
+  it("does not show ongoing dots when ongoing=false", () => {
     const messages = [makeMessage({ content: "No spinner" })];
     const { container } = render(<MessageList {...defaultProps({ messages, ongoing: false })} />);
-    expect(container.querySelector(".message__ongoing-spinner")).not.toBeInTheDocument();
+    expect(container.querySelector(".message__ongoing-dots")).not.toBeInTheDocument();
   });
 });

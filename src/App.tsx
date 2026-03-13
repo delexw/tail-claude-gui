@@ -301,7 +301,6 @@ export function App() {
             selectedIndex={selectedMessage}
             expandedSet={expandedMessages}
             ongoing={session.ongoing}
-            animFrame={animFrame}
             onSelect={setSelectedMessage}
             onToggle={toggleMessage}
             onOpenDetail={openDetail}
