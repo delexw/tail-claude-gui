@@ -84,3 +84,7 @@ upgrade a version, /git-commit and push a new tag 0.3.0
 ---
 
 When "Command running in background with ID: bed6es4d1.",,,, The root process staus is gone, deeper sub agetn etc is not
+
+---
+
+upgrade a version, /git-commit and push a new tag
