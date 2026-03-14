@@ -88,3 +88,12 @@ When "Command running in background with ID: bed6es4d1.",,,, The root process st
 ---
 
 upgrade a version, /git-commit and push a new tag
+
+---
+
+{
+  "command": "sleep 30 && tail -30 /tmp/sso-server-uptodate.log 2>/dev/null || echo \"No log yet\"",
+  "description": "Check bootstrap progress after 30s",
+  "timeout": 35000
+}
+When I see it... the root stats is gone but not in deeper
