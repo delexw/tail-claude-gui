@@ -15,3 +15,7 @@ I think when append new JSONL to every pannel, teh auto scroll doesn't work at a
 ---
 
 Are you sure it it right?
+
+---
+
+upgrade a version, /git-commit and push a new tag
