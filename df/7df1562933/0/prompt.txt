@@ -76,3 +76,7 @@ The cascading process status doesn't pop up to root
 ---
 
 No issue
+
+---
+
+upgrade a version, /git-commit and push a new tag 0.3.0
