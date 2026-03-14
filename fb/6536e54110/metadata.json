@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.5.0",
+  "checkpoint_id": "fb6536e54110",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "src/components/MessageDetail.tsx",
+    "src/components/MessageList.tsx",
+    "src/hooks/useAutoScroll.test.ts",
+    "src/hooks/useAutoScroll.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/fb/6536e54110/0/metadata.json",
+      "transcript": "/fb/6536e54110/0/full.jsonl",
+      "content_hash": "/fb/6536e54110/0/content_hash.txt",
+      "prompt": "/fb/6536e54110/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 43,
+    "cache_creation_tokens": 61898,
+    "cache_read_tokens": 1633337,
+    "output_tokens": 12586,
+    "api_call_count": 36
+  }
+}

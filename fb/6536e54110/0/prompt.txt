@@ -1,0 +1,9 @@
+when a new message is appened, auth scroll page
+
+---
+
+kill dev server
+
+---
+
+any page
