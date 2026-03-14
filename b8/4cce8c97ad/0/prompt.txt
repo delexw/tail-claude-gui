@@ -1,0 +1,5 @@
+After click refresh project button... The process status on session and project tree node doesn't run right.. Please fix
+
+---
+
+Please do the right fix NOT easy fix
