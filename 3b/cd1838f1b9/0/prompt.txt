@@ -101,3 +101,7 @@ When I see it... the root stats is gone but not in deeper
 ---
 
 do not working still can not have root level and session level status
+
+---
+
+upgrade a version, /git-commit and push a new tag
