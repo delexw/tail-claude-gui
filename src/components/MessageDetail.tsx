@@ -64,27 +64,35 @@ export function MessageDetail({ message: msg, ongoing, onBack }: MessageDetailPr
 
   // Keep panel stack items fresh when the session watcher sends updated data.
   // Without this, subagent_ongoing and subagent_messages would be stale.
+  // Only updates state when something meaningful changed to avoid extra re-renders.
   useEffect(() => {
     if (panelStack.length === 0) return;
-    setPanelStack((prev) =>
-      prev.map((entry) => {
+    setPanelStack((prev) => {
+      let changed = false;
+      const next = prev.map((entry) => {
         if (!entry.item.agent_id) return entry;
         const fresh = findItemByAgentId(msg.items, entry.item.agent_id);
-        if (!fresh || fresh === entry.item) return entry;
+        if (!fresh) return entry;
+        // Skip if nothing meaningful changed.
+        if (
+          fresh.subagent_ongoing === entry.item.subagent_ongoing &&
+          fresh.subagent_messages.length === entry.item.subagent_messages.length
+        ) {
+          return entry;
+        }
+        changed = true;
         if (entry.kind === "agent-list") {
           return { ...entry, item: fresh };
         }
-        // For agent-detail, also refresh the message by matching index.
-        const oldIdx = entry.item.subagent_messages.indexOf(entry.msg);
+        // For agent-detail, also refresh the message by matching timestamp.
         const freshMsg =
-          oldIdx >= 0 && oldIdx < fresh.subagent_messages.length
-            ? fresh.subagent_messages[oldIdx]
-            : (fresh.subagent_messages.find(
-                (m) => m.timestamp === entry.msg.timestamp && m.role === entry.msg.role,
-              ) ?? entry.msg);
+          fresh.subagent_messages.find(
+            (m) => m.timestamp === entry.msg.timestamp && m.role === entry.msg.role,
+          ) ?? entry.msg;
         return { ...entry, item: fresh, msg: freshMsg };
-      }),
-    );
+      });
+      return changed ? next : prev;
+    });
   }, [msg.items, panelStack.length]);
 
   useLayoutEffect(() => {

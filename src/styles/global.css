@@ -601,6 +601,45 @@ body {
   }
 }
 
+/* Pure-CSS braille spinner — replaces the JS animFrame approach */
+.braille-spinner::after {
+  content: "\280B";
+  animation: braille-spin 1s steps(10, end) infinite;
+}
+
+@keyframes braille-spin {
+  0% {
+    content: "\280B";
+  }
+  10% {
+    content: "\2819";
+  }
+  20% {
+    content: "\2839";
+  }
+  30% {
+    content: "\2838";
+  }
+  40% {
+    content: "\283C";
+  }
+  50% {
+    content: "\2834";
+  }
+  60% {
+    content: "\2826";
+  }
+  70% {
+    content: "\2827";
+  }
+  80% {
+    content: "\2807";
+  }
+  90% {
+    content: "\280F";
+  }
+}
+
 /* ---- View Toolbar ---- */
 
 .view-toolbar {

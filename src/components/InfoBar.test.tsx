@@ -184,7 +184,7 @@ describe("InfoBar", () => {
   });
 
   it("shows context bar when contextPercent >= 0", () => {
-    const msg = makeMessage({ context_tokens: 100_000 });
+    const msg = makeMessage({ context_tokens: 500_000 });
     render(
       <InfoBar
         meta={makeMeta()}

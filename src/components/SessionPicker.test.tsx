@@ -36,7 +36,6 @@ describe("SessionPicker", () => {
         selectedIndex={0}
         onSelect={vi.fn()}
         onSearchChange={vi.fn()}
-        animFrame={0}
       />,
     );
     expect(screen.getByText(/Discovering sessions/)).toBeInTheDocument();
@@ -51,7 +50,6 @@ describe("SessionPicker", () => {
         selectedIndex={0}
         onSelect={vi.fn()}
         onSearchChange={vi.fn()}
-        animFrame={0}
       />,
     );
     expect(screen.getByText("No sessions found")).toBeInTheDocument();
@@ -66,7 +64,6 @@ describe("SessionPicker", () => {
         selectedIndex={0}
         onSelect={vi.fn()}
         onSearchChange={vi.fn()}
-        animFrame={0}
       />,
     );
     expect(screen.getByText("No matching sessions")).toBeInTheDocument();
@@ -82,7 +79,6 @@ describe("SessionPicker", () => {
         selectedIndex={0}
         onSelect={vi.fn()}
         onSearchChange={vi.fn()}
-        animFrame={0}
       />,
     );
     // Should show "Today" group header since mod_time is now
@@ -100,7 +96,6 @@ describe("SessionPicker", () => {
         selectedIndex={0}
         onSelect={vi.fn()}
         onSearchChange={vi.fn()}
-        animFrame={0}
       />,
     );
     expect(screen.getByText("ACTIVE")).toBeInTheDocument();
@@ -123,7 +118,6 @@ describe("SessionPicker", () => {
         selectedIndex={0}
         onSelect={vi.fn()}
         onSearchChange={vi.fn()}
-        animFrame={0}
       />,
     );
     expect(screen.getByText("sonnet4.20250514")).toBeInTheDocument();
@@ -144,7 +138,6 @@ describe("SessionPicker", () => {
         selectedIndex={0}
         onSelect={vi.fn()}
         onSearchChange={onSearchChange}
-        animFrame={0}
       />,
     );
     const input = screen.getByPlaceholderText("Search sessions...");
@@ -162,7 +155,6 @@ describe("SessionPicker", () => {
         selectedIndex={0}
         onSelect={vi.fn()}
         onSearchChange={vi.fn()}
-        animFrame={0}
       />,
     );
     const sessionEl = screen.getByText(/Hello world/).closest(".picker__session")!;
@@ -180,7 +172,6 @@ describe("SessionPicker", () => {
         selectedIndex={0}
         onSelect={onSelect}
         onSearchChange={vi.fn()}
-        animFrame={0}
       />,
     );
     fireEvent.click(screen.getByText(/Hello world/).closest(".picker__session")!);
@@ -196,7 +187,6 @@ describe("SessionPicker", () => {
         selectedIndex={0}
         onSelect={vi.fn()}
         onSearchChange={vi.fn()}
-        animFrame={0}
       />,
     );
     expect(screen.queryByText(/Discovering sessions/)).not.toBeInTheDocument();

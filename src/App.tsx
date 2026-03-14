@@ -22,7 +22,6 @@ export function App() {
   const [selectedMessage, setSelectedMessage] = useState(0);
   const [pickerSelectedIndex, setPickerSelectedIndex] = useState(0);
   const [showKeybinds, setShowKeybinds] = useState(true);
-  const [animFrame, setAnimFrame] = useState(0);
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(180);
   const [sidebarFocused, setSidebarFocused] = useState(false);
@@ -52,15 +51,6 @@ export function App() {
     clear: clearExpanded,
     addAll: expandMessages,
   } = useToggleSet();
-
-  // Animation frame for ongoing indicators
-  useEffect(() => {
-    if (!session.ongoing) return;
-    const id = setInterval(() => {
-      setAnimFrame((f) => f + 1);
-    }, 100);
-    return () => clearInterval(id);
-  }, [session.ongoing]);
 
   // Shared: fetch project dirs and discover sessions
   const loadProjectDirs = useCallback(async () => {
@@ -290,7 +280,6 @@ export function App() {
             onSelect={handleSelectSession}
             onSearchChange={picker.setSearchQuery}
             onSelectIndex={setPickerSelectedIndex}
-            animFrame={animFrame}
           />
         );
 
@@ -338,7 +327,6 @@ export function App() {
           sessionTotals={session.sessionTotals}
           sessionPath={session.sessionPath}
           ongoing={session.ongoing}
-          animFrame={animFrame}
         />
       )}
 

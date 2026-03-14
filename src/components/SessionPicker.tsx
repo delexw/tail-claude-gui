@@ -11,7 +11,7 @@ import {
   groupByDate,
   shortModel,
 } from "../lib/format";
-import { getModelColor, spinnerFrames } from "../lib/theme";
+import { getModelColor } from "../lib/theme";
 import { BsClaude } from "react-icons/bs";
 import { TokensIcon, CostIcon } from "./Icons";
 
@@ -23,7 +23,6 @@ interface SessionPickerProps {
   onSelect: (session: SessionInfo) => void;
   onSearchChange: (query: string) => void;
   onSelectIndex?: (index: number) => void;
-  animFrame: number;
 }
 
 export function SessionPicker({
@@ -34,7 +33,6 @@ export function SessionPicker({
   onSelect,
   onSearchChange,
   onSelectIndex,
-  animFrame,
 }: SessionPickerProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const selectedRef = useScrollToSelected(selectedIndex);
@@ -84,7 +82,7 @@ export function SessionPicker({
       <div className="picker__list" ref={listRef}>
         {loading && (
           <div className="picker__loading">
-            <span className="spinner">{spinnerFrames[animFrame % spinnerFrames.length]}</span>
+            <span className="braille-spinner" />
             Discovering sessions...
           </div>
         )}

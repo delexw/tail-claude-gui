@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import type { DisplayMessage, SessionMeta, SessionTotals, GitInfo } from "../types";
 import { shortPath, shortMode, contextPercent, formatTokens, formatCost } from "../lib/format";
-import { getContextColor, spinnerFrames } from "../lib/theme";
+import { getContextColor } from "../lib/theme";
 import { TokensIcon, CostIcon } from "./Icons";
 
 interface InfoBarProps {
@@ -11,7 +11,6 @@ interface InfoBarProps {
   sessionTotals: SessionTotals;
   sessionPath: string;
   ongoing: boolean;
-  animFrame?: number;
 }
 
 export function InfoBar({
@@ -21,7 +20,6 @@ export function InfoBar({
   sessionTotals,
   sessionPath,
   ongoing,
-  animFrame = 0,
 }: InfoBarProps) {
   const projectName = shortPath(meta.cwd, meta.git_branch);
   const sessionId = sessionPath.split("/").pop()?.replace(".jsonl", "") || "";
@@ -85,7 +83,7 @@ export function InfoBar({
 
       {ongoing && (
         <span className="info-bar__ongoing">
-          {spinnerFrames[animFrame % spinnerFrames.length]} active
+          <span className="braille-spinner" /> active
         </span>
       )}
     </div>

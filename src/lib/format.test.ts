@@ -273,33 +273,33 @@ describe("contextPercent", () => {
     const msgs = [
       makeContextMsg("claude", 50_000),
       makeContextMsg("user", 0),
-      makeContextMsg("claude", 100_000),
+      makeContextMsg("claude", 500_000),
     ];
-    // 100_000 / 200_000 = 50%
+    // 500_000 / 1_000_000 = 50%
     expect(contextPercent(msgs)).toBe(50);
   });
 
   it("skips non-claude messages", () => {
     const msgs = [
-      makeContextMsg("claude", 60_000),
+      makeContextMsg("claude", 300_000),
       makeContextMsg("user", 150_000), // user messages should be skipped
     ];
-    expect(contextPercent(msgs)).toBe(30); // 60_000 / 200_000 = 30%
+    expect(contextPercent(msgs)).toBe(30); // 300_000 / 1_000_000 = 30%
   });
 
   it("caps at 100%", () => {
-    const msgs = [makeContextMsg("claude", 250_000)];
+    const msgs = [makeContextMsg("claude", 1_200_000)];
     expect(contextPercent(msgs)).toBe(100);
   });
 
   it("floors the percentage", () => {
-    // 1_000 / 200_000 = 0.5% -> floors to 0
+    // 1_000 / 1_000_000 = 0.1% -> floors to 0
     const msgs = [makeContextMsg("claude", 1_000)];
     expect(contextPercent(msgs)).toBe(0);
   });
 
   it("returns correct value for full context", () => {
-    const msgs = [makeContextMsg("claude", 200_000)];
+    const msgs = [makeContextMsg("claude", 1_000_000)];
     expect(contextPercent(msgs)).toBe(100);
   });
 });

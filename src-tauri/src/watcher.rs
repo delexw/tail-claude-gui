@@ -95,12 +95,38 @@ pub fn start_session_watcher(
         let project_dir = Path::new(&path).parent().unwrap_or(Path::new(""));
         let _ = watcher.watch(project_dir, RecursiveMode::Recursive);
 
+        // Only react to changes in this session's files — not other sessions.
+        let session_file = path.clone();
+        let session_base = Path::new(&path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string();
+        let project_dir_str = project_dir.to_string_lossy().to_string();
+
         run_debounce_loop(
             rx,
-            |event| {
+            move |event| {
                 event.paths.iter().any(|p| {
-                    p.to_string_lossy() == path
-                        || p.extension().map(|e| e == "jsonl").unwrap_or(false)
+                    let ps = p.to_string_lossy();
+                    // Exact match on the session file.
+                    if ps == session_file {
+                        return true;
+                    }
+                    // Files inside this session's subdirectory (subagents, etc.).
+                    if let Some(parent) = p.parent() {
+                        let parent_str = parent.to_string_lossy();
+                        if parent_str.contains(&session_base) {
+                            return p.extension().map(|e| e == "jsonl").unwrap_or(false);
+                        }
+                    }
+                    // New team session files directly in the project directory.
+                    if let Some(parent) = p.parent() {
+                        if parent.to_string_lossy() == project_dir_str {
+                            return p.extension().map(|e| e == "jsonl").unwrap_or(false);
+                        }
+                    }
+                    false
                 })
             },
             signal_tx,
@@ -125,7 +151,7 @@ pub fn start_session_watcher(
                     break;
                 }
                 Some(()) = signal_rx.recv() => {
-                    // Read any new data.
+                    // Read any new data from the main session file.
                     match read_session_incremental(&path_for_rebuild, offset) {
                         Ok((new_msgs, new_offset, _)) => {
                             if !new_msgs.is_empty() || new_offset != offset {
@@ -242,8 +268,19 @@ pub fn start_picker_watcher(project_dirs: Vec<String>, app: AppHandle) -> Watche
                     break;
                 }
                 Some(()) = signal_rx.recv() => {
-                    let mut sessions = crate::parser::session::discover_all_project_sessions(&project_dirs)
-                        .unwrap_or_default();
+                    // Use the session cache for efficient rescanning —
+                    // only files whose (mod_time, size) changed get reparsed.
+                    let mut sessions = if let Some(state) = app.try_state::<crate::state::AppState>() {
+                        let cache = match state.session_cache.lock() {
+                            Ok(c) => c,
+                            Err(_) => continue,
+                        };
+                        cache.discover_all_project_sessions(&project_dirs)
+                            .unwrap_or_default()
+                    } else {
+                        crate::parser::session::discover_all_project_sessions(&project_dirs)
+                            .unwrap_or_default()
+                    };
 
                     // Apply the session watcher's ongoing status (more accurate
                     // than the picker's lightweight metadata scan).
