@@ -1,0 +1,9 @@
+For this log, it should not be a red flag
+
+---
+
+hardcided?
+
+---
+
+Can you search logs to confirm no other attribute can use over hardcoded?
