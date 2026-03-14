@@ -89,18 +89,11 @@ pub fn start_session_watcher(
             Err(_) => return,
         };
 
-        // Watch the session file.
-        let _ = watcher.watch(Path::new(&path), RecursiveMode::NonRecursive);
-
-        // Watch the project directory for new team session files.
+        // Watch the project directory recursively — catches the session file,
+        // team session files, and subagent files in any subdirectory (including
+        // subagent directories created after the watcher starts).
         let project_dir = Path::new(&path).parent().unwrap_or(Path::new(""));
-        let _ = watcher.watch(project_dir, RecursiveMode::NonRecursive);
-
-        // Watch the subagents directory so ongoing dot updates quickly.
-        let subagents_dir = crate::parser::subagent::subagents_dir(&path);
-        if subagents_dir.exists() {
-            let _ = watcher.watch(&subagents_dir, RecursiveMode::NonRecursive);
-        }
+        let _ = watcher.watch(project_dir, RecursiveMode::Recursive);
 
         run_debounce_loop(
             rx,

@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef, useLayoutEffect } from "react";
+import { useState, useMemo, useCallback, useRef, useLayoutEffect, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import type { DisplayMessage, DisplayItem } from "../types";
 import { shortModel, formatTokens, formatDuration, formatExactTime } from "../lib/format";
@@ -14,6 +14,20 @@ import { ResizeHandle } from "./ResizeHandle";
 import { OngoingDots } from "./OngoingDots";
 import { IoMdCloseCircle } from "react-icons/io";
 import { ClaudeIcon } from "./Icons";
+
+/* ─── Helpers ─── */
+
+/** Recursively find a DisplayItem by agent_id in a nested item tree. */
+function findItemByAgentId(items: DisplayItem[], agentId: string): DisplayItem | undefined {
+  for (const item of items) {
+    if (item.agent_id === agentId) return item;
+    for (const subMsg of item.subagent_messages) {
+      const found = findItemByAgentId(subMsg.items, agentId);
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
 
 /* ─── Panel stack types ─── */
 
@@ -47,6 +61,31 @@ export function MessageDetail({ message: msg, ongoing, onBack }: MessageDetailPr
   useAutoScroll(msg.items.length, bodyRef);
   const savedScroll = useRef<number | null>(null);
   const panelRefs = useRef<Map<number, ColumnNav>>(new Map());
+
+  // Keep panel stack items fresh when the session watcher sends updated data.
+  // Without this, subagent_ongoing and subagent_messages would be stale.
+  useEffect(() => {
+    if (panelStack.length === 0) return;
+    setPanelStack((prev) =>
+      prev.map((entry) => {
+        if (!entry.item.agent_id) return entry;
+        const fresh = findItemByAgentId(msg.items, entry.item.agent_id);
+        if (!fresh || fresh === entry.item) return entry;
+        if (entry.kind === "agent-list") {
+          return { ...entry, item: fresh };
+        }
+        // For agent-detail, also refresh the message by matching index.
+        const oldIdx = entry.item.subagent_messages.indexOf(entry.msg);
+        const freshMsg =
+          oldIdx >= 0 && oldIdx < fresh.subagent_messages.length
+            ? fresh.subagent_messages[oldIdx]
+            : (fresh.subagent_messages.find(
+                (m) => m.timestamp === entry.msg.timestamp && m.role === entry.msg.role,
+              ) ?? entry.msg);
+        return { ...entry, item: fresh, msg: freshMsg };
+      }),
+    );
+  }, [msg.items, panelStack.length]);
 
   useLayoutEffect(() => {
     if (savedScroll.current != null && bodyRef.current) {
