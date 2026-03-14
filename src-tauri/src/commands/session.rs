@@ -11,7 +11,7 @@ use crate::watcher::start_session_watcher;
 
 /// Load a session file and return display messages.
 #[tauri::command]
-pub async fn load_session(path: String) -> Result<LoadResult, String> {
+pub async fn load_session(path: String, state: State<'_, AppState>) -> Result<LoadResult, String> {
     if path.is_empty() {
         return Err("no session path provided".to_string());
     }
@@ -26,6 +26,9 @@ pub async fn load_session(path: String) -> Result<LoadResult, String> {
     inject_orphan_subagents(&mut chunks, &mut all_procs);
 
     let ongoing = OngoingChecker::new(&chunks, &all_procs, &path).is_ongoing();
+
+    // Set initial ongoing status so picker has it immediately.
+    state.set_watched_ongoing(path.clone(), ongoing);
 
     let teams = reconstruct_teams(&chunks, &all_procs);
     let messages = chunks_to_messages(&chunks, &all_procs, &color_map);
@@ -109,5 +112,6 @@ pub async fn get_project_dirs(state: State<'_, AppState>) -> Result<Vec<String>,
 /// Stop watching the current session.
 #[tauri::command]
 pub async fn unwatch_session(state: State<'_, AppState>) -> Result<(), String> {
+    state.clear_watched_ongoing();
     state.stop_session_watcher()
 }

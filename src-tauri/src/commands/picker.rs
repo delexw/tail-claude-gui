@@ -13,7 +13,11 @@ pub async fn discover_sessions(
     state: State<'_, AppState>,
 ) -> Result<Vec<SessionInfo>, String> {
     let cache = state.session_cache.lock().map_err(|e| e.to_string())?;
-    cache.discover_all_project_sessions(&project_dirs)
+    let mut sessions = cache.discover_all_project_sessions(&project_dirs)?;
+    // The session watcher has the most accurate ongoing detection, so apply
+    // its verdict over the picker's lightweight metadata scan.
+    state.apply_watched_ongoing(&mut sessions);
+    Ok(sessions)
 }
 
 /// Start watching project directories for new/changed sessions.

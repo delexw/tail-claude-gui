@@ -1,7 +1,7 @@
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::Path;
 use std::time::Duration;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::mpsc;
 
 use crate::convert::*;
@@ -150,6 +150,11 @@ pub fn start_session_watcher(
 
                     let ongoing = OngoingChecker::new(&chunks, &all_procs, &path_for_rebuild).is_ongoing();
 
+                    // Share ongoing status with AppState so the picker can use it.
+                    if let Some(state) = app.try_state::<crate::state::AppState>() {
+                        state.set_watched_ongoing(path_for_rebuild.clone(), ongoing);
+                    }
+
                     let teams = reconstruct_teams(&chunks, &all_procs);
                     let messages = chunks_to_messages(&chunks, &all_procs, &color_map);
 
@@ -244,8 +249,14 @@ pub fn start_picker_watcher(project_dirs: Vec<String>, app: AppHandle) -> Watche
                     break;
                 }
                 Some(()) = signal_rx.recv() => {
-                    let sessions = crate::parser::session::discover_all_project_sessions(&project_dirs)
+                    let mut sessions = crate::parser::session::discover_all_project_sessions(&project_dirs)
                         .unwrap_or_default();
+
+                    // Apply the session watcher's ongoing status (more accurate
+                    // than the picker's lightweight metadata scan).
+                    if let Some(state) = app.try_state::<crate::state::AppState>() {
+                        state.apply_watched_ongoing(&mut sessions);
+                    }
 
                     let payload = PickerRefreshPayload { sessions };
                     let _ = app.emit("picker-refresh", payload);
