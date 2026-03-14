@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.5.0",
+  "checkpoint_id": "eebee24f05ec",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "src/hooks/useAutoScroll.test.ts",
+    "src/hooks/useAutoScroll.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ee/bee24f05ec/0/metadata.json",
+      "transcript": "/ee/bee24f05ec/0/full.jsonl",
+      "content_hash": "/ee/bee24f05ec/0/content_hash.txt",
+      "prompt": "/ee/bee24f05ec/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 186,
+    "cache_creation_tokens": 766364,
+    "cache_read_tokens": 20416739,
+    "output_tokens": 84253,
+    "api_call_count": 163
+  }
+}
