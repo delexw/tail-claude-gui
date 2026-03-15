@@ -1,0 +1,50 @@
+{
+  "cli_version": "0.5.0",
+  "checkpoint_id": "a4697db3cf83",
+  "session_id": "5263810f-b5fa-41d5-8016-2298693a88d4",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-15T21:49:37.726319Z",
+  "branch": "main",
+  "checkpoints_count": 7,
+  "files_touched": [
+    ".oxlintrc.json",
+    "src/App.tsx",
+    "src/components/SettingsModal.test.tsx",
+    "src/components/SettingsModal.tsx",
+    "src/hooks/usePicker.ts",
+    "src/hooks/useSession.ts",
+    "src/hooks/useTauriEvent.ts",
+    "src/lib/invoke.test.ts",
+    "src/lib/invoke.ts",
+    "src/lib/isTauri.test.ts",
+    "src/lib/isTauri.ts",
+    "src/lib/listen.test.ts",
+    "src/lib/listen.ts",
+    "src/lib/openUrl.ts",
+    "src/main.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-6[1m]",
+  "turn_id": "26fb9dd780fc",
+  "checkpoint_transcript_start": 174,
+  "transcript_lines_at_start": 174,
+  "token_usage": {
+    "input_tokens": 72,
+    "cache_creation_tokens": 74902,
+    "cache_read_tokens": 4460446,
+    "output_tokens": 21306,
+    "api_call_count": 52
+  },
+  "session_metrics": {
+    "turn_count": 9
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-15T21:49:37.31655Z",
+    "agent_lines": 217,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 217,
+    "agent_percentage": 100
+  }
+}

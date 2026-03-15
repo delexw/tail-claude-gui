@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.5.0",
+  "checkpoint_id": "a4697db3cf83",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 7,
+  "files_touched": [
+    ".oxlintrc.json",
+    "src/App.tsx",
+    "src/components/SettingsModal.test.tsx",
+    "src/components/SettingsModal.tsx",
+    "src/hooks/usePicker.ts",
+    "src/hooks/useSession.ts",
+    "src/hooks/useTauriEvent.ts",
+    "src/lib/invoke.test.ts",
+    "src/lib/invoke.ts",
+    "src/lib/isTauri.test.ts",
+    "src/lib/isTauri.ts",
+    "src/lib/listen.test.ts",
+    "src/lib/listen.ts",
+    "src/lib/openUrl.ts",
+    "src/main.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a4/697db3cf83/0/metadata.json",
+      "transcript": "/a4/697db3cf83/0/full.jsonl",
+      "content_hash": "/a4/697db3cf83/0/content_hash.txt",
+      "prompt": "/a4/697db3cf83/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 72,
+    "cache_creation_tokens": 74902,
+    "cache_read_tokens": 4460446,
+    "output_tokens": 21306,
+    "api_call_count": 52
+  }
+}
