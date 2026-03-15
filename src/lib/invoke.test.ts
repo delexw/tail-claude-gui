@@ -1,57 +1,96 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// Tests run in jsdom (no __TAURI_INTERNALS__), so web fallbacks are used.
+// Tests run in jsdom (no __TAURI_INTERNALS__), so the HTTP fallback is used.
 
-describe("invoke (web mode)", () => {
+const API_BASE = "http://127.0.0.1:11423";
+
+describe("invoke (web/HTTP mode)", () => {
   beforeEach(() => {
-    localStorage.clear();
+    vi.restoreAllMocks();
   });
 
-  it("get_settings returns default when nothing stored", async () => {
+  function mockFetch(body: unknown, ok = true) {
+    const fn = vi.fn().mockResolvedValue({
+      ok,
+      status: ok ? 200 : 400,
+      statusText: ok ? "OK" : "Bad Request",
+      text: () => Promise.resolve(JSON.stringify(body)),
+      json: () => Promise.resolve(body),
+    });
+    vi.stubGlobal("fetch", fn);
+    return fn;
+  }
+
+  it("get_settings calls GET /api/settings", async () => {
+    const data = { projects_dir: "/custom", default_dir: "/home/.claude/projects" };
+    const fetchFn = mockFetch(data);
     const { invoke } = await import("./invoke");
-    const res = await invoke<{ projects_dir: string | null; default_dir: string }>("get_settings");
-    expect(res.projects_dir).toBeNull();
-    expect(res.default_dir).toContain(".claude/projects");
+
+    const res = await invoke<typeof data>("get_settings");
+    expect(res).toEqual(data);
+    expect(fetchFn).toHaveBeenCalledWith(
+      `${API_BASE}/api/settings`,
+      expect.objectContaining({
+        headers: expect.objectContaining({ "Content-Type": "application/json" }),
+      }),
+    );
   });
 
-  it("set_projects_dir persists to localStorage", async () => {
+  it("set_projects_dir calls POST /api/settings/dir", async () => {
+    const data = { projects_dir: "/new", default_dir: "/home/.claude/projects" };
+    const fetchFn = mockFetch(data);
     const { invoke } = await import("./invoke");
-    await invoke("set_projects_dir", { path: "/custom/dir" });
-    const res = await invoke<{ projects_dir: string | null }>("get_settings");
-    expect(res.projects_dir).toBe("/custom/dir");
+
+    await invoke("set_projects_dir", { path: "/new" });
+    expect(fetchFn).toHaveBeenCalledWith(
+      `${API_BASE}/api/settings/dir`,
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ path: "/new" }),
+      }),
+    );
   });
 
-  it("set_projects_dir with null clears storage", async () => {
+  it("get_project_dirs calls GET /api/project-dirs", async () => {
+    const dirs = ["/a", "/b"];
+    mockFetch(dirs);
     const { invoke } = await import("./invoke");
-    await invoke("set_projects_dir", { path: "/custom/dir" });
-    await invoke("set_projects_dir", { path: null });
-    const res = await invoke<{ projects_dir: string | null }>("get_settings");
-    expect(res.projects_dir).toBeNull();
+
+    const res = await invoke<string[]>("get_project_dirs");
+    expect(res).toEqual(dirs);
   });
 
-  it("get_project_dirs returns array with stored dir", async () => {
+  it("discover_sessions calls GET /api/sessions with dirs query", async () => {
+    const fetchFn = mockFetch([]);
     const { invoke } = await import("./invoke");
-    await invoke("set_projects_dir", { path: "/my/projects" });
-    const dirs = await invoke<string[]>("get_project_dirs");
-    expect(dirs).toEqual(["/my/projects"]);
-  });
 
-  it("discover_sessions returns empty array", async () => {
-    const { invoke } = await import("./invoke");
-    const sessions = await invoke<unknown[]>("discover_sessions", { projectDirs: ["/a"] });
-    expect(sessions).toEqual([]);
+    await invoke("discover_sessions", { projectDirs: ["/a", "/b"] });
+    const url = fetchFn.mock.calls[0][0] as string;
+    expect(url).toContain("/api/sessions?dirs=");
+    expect(url).toContain(encodeURIComponent("/a,/b"));
   });
 
   it("watch/unwatch commands resolve without error", async () => {
+    mockFetch({ ok: true });
     const { invoke } = await import("./invoke");
-    await expect(invoke("watch_session", { path: "/a" })).resolves.toBeUndefined();
-    await expect(invoke("unwatch_session")).resolves.toBeUndefined();
-    await expect(invoke("watch_picker", { projectDirs: [] })).resolves.toBeUndefined();
-    await expect(invoke("unwatch_picker")).resolves.toBeUndefined();
+
+    await expect(invoke("watch_session", { path: "/a" })).resolves.toBeDefined();
+    await expect(invoke("unwatch_session")).resolves.toBeDefined();
+    await expect(invoke("watch_picker", { projectDirs: [] })).resolves.toBeDefined();
+    await expect(invoke("unwatch_picker")).resolves.toBeDefined();
+  });
+
+  it("throws on HTTP error response", async () => {
+    mockFetch({ error: "path does not exist" }, false);
+    const { invoke } = await import("./invoke");
+
+    await expect(invoke("set_projects_dir", { path: "/bad" })).rejects.toThrow(
+      "path does not exist",
+    );
   });
 
   it("unknown command throws", async () => {
     const { invoke } = await import("./invoke");
-    await expect(invoke("nonexistent_cmd")).rejects.toThrow("not available in browser mode");
+    await expect(invoke("nonexistent_cmd")).rejects.toThrow('Unknown command "nonexistent_cmd"');
   });
 });

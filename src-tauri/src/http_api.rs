@@ -1,0 +1,400 @@
+use std::convert::Infallible;
+use std::sync::Arc;
+
+use axum::extract::{Query, State};
+use axum::response::sse::{Event, KeepAlive, Sse};
+use axum::response::{IntoResponse, Json, Response};
+use axum::routing::{get, post};
+use axum::Router;
+use serde::Deserialize;
+use tauri::{AppHandle, Manager};
+use tokio_stream::wrappers::BroadcastStream;
+use tokio_stream::StreamExt;
+use tower_http::cors::CorsLayer;
+
+use crate::convert::*;
+use crate::parser::chunk::build_chunks;
+use crate::parser::debuglog::*;
+use crate::parser::ongoing::OngoingChecker;
+use crate::parser::session::{extract_session_meta, read_session_incremental};
+use crate::parser::subagent::{discover_and_link_all, inject_orphan_subagents};
+use crate::parser::team::reconstruct_teams;
+use crate::state::AppState;
+use crate::watcher::{start_picker_watcher, start_session_watcher};
+
+/// Shared state for axum handlers.
+#[derive(Clone)]
+pub struct HttpState {
+    pub app: AppHandle,
+}
+
+/// Start the HTTP API server on port 11423.
+pub async fn start_http_server(app: AppHandle) {
+    let state = Arc::new(HttpState { app });
+
+    let router = Router::new()
+        .route("/api/settings", get(api_get_settings))
+        .route("/api/settings/dir", post(api_set_projects_dir))
+        .route("/api/project-dirs", get(api_get_project_dirs))
+        .route("/api/sessions", get(api_discover_sessions))
+        .route("/api/session/load", post(api_load_session))
+        .route("/api/session/meta", get(api_get_session_meta))
+        .route("/api/session/watch", post(api_watch_session))
+        .route("/api/session/unwatch", post(api_unwatch_session))
+        .route("/api/picker/watch", post(api_watch_picker))
+        .route("/api/picker/unwatch", post(api_unwatch_picker))
+        .route("/api/git-info", get(api_get_git_info))
+        .route("/api/debug-log", get(api_get_debug_log))
+        .route("/api/events", get(api_events))
+        .layer(CorsLayer::permissive())
+        .with_state(state);
+
+    let listener = match tokio::net::TcpListener::bind("127.0.0.1:11423").await {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("HTTP API: failed to bind port 11423: {e}");
+            return;
+        }
+    };
+    eprintln!("HTTP API: listening on http://127.0.0.1:11423");
+
+    if let Err(e) = axum::serve(listener, router).await {
+        eprintln!("HTTP API: server error: {e}");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+fn app_state(state: &HttpState) -> &AppState {
+    state.app.state::<AppState>().inner()
+}
+
+fn err_response(status: axum::http::StatusCode, msg: String) -> Response {
+    (status, Json(serde_json::json!({ "error": msg }))).into_response()
+}
+
+fn ok_json<T: serde::Serialize>(val: &T) -> Response {
+    Json(val).into_response()
+}
+
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+
+async fn api_get_settings(State(state): State<Arc<HttpState>>) -> Response {
+    let app_state = app_state(&state);
+    let guard = match app_state.settings.lock() {
+        Ok(g) => g,
+        Err(e) => {
+            return err_response(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        }
+    };
+    let default_dir = crate::commands::settings::platform_default_dir();
+    ok_json(&crate::commands::settings::SettingsResponse {
+        projects_dir: guard.projects_dir.clone(),
+        default_dir,
+    })
+}
+
+#[derive(Deserialize)]
+struct SetDirBody {
+    path: Option<String>,
+}
+
+async fn api_set_projects_dir(
+    State(state): State<Arc<HttpState>>,
+    Json(body): Json<SetDirBody>,
+) -> Response {
+    let app_state = app_state(&state);
+
+    if let Some(ref p) = body.path {
+        let pb = std::path::PathBuf::from(p);
+        if !pb.exists() {
+            return err_response(
+                axum::http::StatusCode::BAD_REQUEST,
+                format!("path does not exist: {p}"),
+            );
+        }
+        if !pb.is_dir() {
+            return err_response(
+                axum::http::StatusCode::BAD_REQUEST,
+                format!("path is not a directory: {p}"),
+            );
+        }
+    }
+
+    let mut guard = match app_state.settings.lock() {
+        Ok(g) => g,
+        Err(e) => {
+            return err_response(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        }
+    };
+    guard.projects_dir = body.path;
+    if let Err(e) = crate::settings::save_settings(&guard) {
+        return err_response(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e);
+    }
+    let default_dir = crate::commands::settings::platform_default_dir();
+    ok_json(&crate::commands::settings::SettingsResponse {
+        projects_dir: guard.projects_dir.clone(),
+        default_dir,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Project dirs
+// ---------------------------------------------------------------------------
+
+async fn api_get_project_dirs(State(state): State<Arc<HttpState>>) -> Response {
+    let app_state = app_state(&state);
+    let configured = match app_state.settings.lock() {
+        Ok(g) => g.projects_dir.clone(),
+        Err(e) => {
+            return err_response(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        }
+    };
+    let projects_dir = match crate::parser::session::claude_projects_dir(configured.as_deref()) {
+        Ok(d) => d,
+        Err(e) => return err_response(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e),
+    };
+    if !projects_dir.exists() {
+        return ok_json(&Vec::<String>::new());
+    }
+    let entries = match std::fs::read_dir(&projects_dir) {
+        Ok(e) => e,
+        Err(e) => {
+            return err_response(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        }
+    };
+    let dirs: Vec<String> = entries
+        .flatten()
+        .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+        .map(|e| e.path().to_string_lossy().to_string())
+        .collect();
+    ok_json(&dirs)
+}
+
+// ---------------------------------------------------------------------------
+// Sessions
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+struct DiscoverQuery {
+    dirs: String, // comma-separated
+}
+
+async fn api_discover_sessions(
+    State(state): State<Arc<HttpState>>,
+    Query(q): Query<DiscoverQuery>,
+) -> Response {
+    let app_state = app_state(&state);
+    let project_dirs: Vec<String> = q.dirs.split(',').map(|s| s.to_string()).collect();
+    let cache = match app_state.session_cache.lock() {
+        Ok(c) => c,
+        Err(e) => {
+            return err_response(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        }
+    };
+    let mut sessions = match cache.discover_all_project_sessions(&project_dirs) {
+        Ok(s) => s,
+        Err(e) => return err_response(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e),
+    };
+    app_state.apply_watched_ongoing(&mut sessions);
+    ok_json(&sessions)
+}
+
+#[derive(Deserialize)]
+struct PathBody {
+    path: String,
+}
+
+async fn api_load_session(
+    State(state): State<Arc<HttpState>>,
+    Json(body): Json<PathBody>,
+) -> Response {
+    let app_state = app_state(&state);
+
+    if body.path.is_empty() {
+        return err_response(
+            axum::http::StatusCode::BAD_REQUEST,
+            "no session path provided".to_string(),
+        );
+    }
+
+    let (classified, _new_offset, _) = match read_session_incremental(&body.path, 0) {
+        Ok(v) => v,
+        Err(e) => return err_response(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e),
+    };
+    let mut chunks = build_chunks(&classified);
+    let (mut all_procs, color_map) = discover_and_link_all(&body.path, &chunks);
+    inject_orphan_subagents(&mut chunks, &mut all_procs);
+
+    let ongoing = OngoingChecker::new(&chunks, &all_procs, &body.path).is_ongoing();
+    app_state.set_watched_ongoing(body.path.clone(), ongoing);
+
+    let teams = reconstruct_teams(&chunks, &all_procs);
+    let messages = chunks_to_messages(&chunks, &all_procs, &color_map);
+    let meta = extract_session_meta(&body.path);
+
+    let scanned = crate::parser::session::scan_session_metadata(&body.path);
+    let session_totals = SessionTotals {
+        total_tokens: scanned.total_tokens,
+        input_tokens: scanned.input_tokens,
+        output_tokens: scanned.output_tokens,
+        cache_read_tokens: scanned.cache_read_tokens,
+        cache_creation_tokens: scanned.cache_creation_tokens,
+        cost_usd: scanned.cost_usd,
+        model: scanned.model,
+    };
+
+    ok_json(&LoadResult {
+        messages,
+        teams,
+        path: body.path,
+        ongoing,
+        meta,
+        session_totals,
+    })
+}
+
+#[derive(Deserialize)]
+struct MetaQuery {
+    path: String,
+}
+
+async fn api_get_session_meta(Query(q): Query<MetaQuery>) -> Response {
+    if q.path.is_empty() {
+        return err_response(
+            axum::http::StatusCode::BAD_REQUEST,
+            "no session path provided".to_string(),
+        );
+    }
+    ok_json(&extract_session_meta(&q.path))
+}
+
+// ---------------------------------------------------------------------------
+// Watch / unwatch
+// ---------------------------------------------------------------------------
+
+async fn api_watch_session(
+    State(state): State<Arc<HttpState>>,
+    Json(body): Json<PathBody>,
+) -> Response {
+    let app_state = app_state(&state);
+    if let Err(e) = app_state.stop_session_watcher() {
+        return err_response(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e);
+    }
+    let (classified, new_offset, _) = match read_session_incremental(&body.path, 0) {
+        Ok(v) => v,
+        Err(e) => return err_response(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e),
+    };
+    let handle = start_session_watcher(body.path, classified, new_offset, state.app.clone());
+    if let Err(e) = app_state.set_session_watcher(handle) {
+        return err_response(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e);
+    }
+    ok_json(&serde_json::json!({ "ok": true }))
+}
+
+async fn api_unwatch_session(State(state): State<Arc<HttpState>>) -> Response {
+    let app_state = app_state(&state);
+    app_state.clear_watched_ongoing();
+    match app_state.stop_session_watcher() {
+        Ok(()) => ok_json(&serde_json::json!({ "ok": true })),
+        Err(e) => err_response(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e),
+    }
+}
+
+#[derive(Deserialize)]
+struct WatchPickerBody {
+    #[serde(rename = "projectDirs")]
+    project_dirs: Vec<String>,
+}
+
+async fn api_watch_picker(
+    State(state): State<Arc<HttpState>>,
+    Json(body): Json<WatchPickerBody>,
+) -> Response {
+    let app_state = app_state(&state);
+    if let Err(e) = app_state.stop_picker_watcher() {
+        return err_response(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e);
+    }
+    let handle = start_picker_watcher(body.project_dirs, state.app.clone());
+    if let Err(e) = app_state.set_picker_watcher(handle) {
+        return err_response(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e);
+    }
+    ok_json(&serde_json::json!({ "ok": true }))
+}
+
+async fn api_unwatch_picker(State(state): State<Arc<HttpState>>) -> Response {
+    let app_state = app_state(&state);
+    match app_state.stop_picker_watcher() {
+        Ok(()) => ok_json(&serde_json::json!({ "ok": true })),
+        Err(e) => err_response(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Git info
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+struct GitQuery {
+    cwd: String,
+}
+
+async fn api_get_git_info(Query(q): Query<GitQuery>) -> Response {
+    ok_json(&crate::commands::git::get_git_info(q.cwd))
+}
+
+// ---------------------------------------------------------------------------
+// Debug log
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+struct DebugQuery {
+    path: String,
+    #[serde(rename = "minLevel")]
+    min_level: Option<String>,
+    #[serde(rename = "filterText")]
+    filter_text: Option<String>,
+}
+
+async fn api_get_debug_log(Query(q): Query<DebugQuery>) -> Response {
+    let debug_path = debug_log_path(&q.path);
+    if debug_path.is_empty() {
+        return ok_json(&Vec::<DebugEntry>::new());
+    }
+    let (entries, _offset) = match read_debug_log(&debug_path) {
+        Ok(v) => v,
+        Err(e) => return err_response(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e),
+    };
+    let level = match q.min_level.as_deref() {
+        Some("WARN") | Some("warn") => DebugLevel::Warn,
+        Some("ERROR") | Some("error") => DebugLevel::Error,
+        _ => DebugLevel::Debug,
+    };
+    let filtered = filter_by_level(&entries, &level);
+    let filtered = filter_by_text(&filtered, q.filter_text.as_deref().unwrap_or(""));
+    let collapsed = collapse_duplicates(filtered);
+    ok_json(&collapsed)
+}
+
+// ---------------------------------------------------------------------------
+// SSE events
+// ---------------------------------------------------------------------------
+
+async fn api_events(
+    State(state): State<Arc<HttpState>>,
+) -> Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>> {
+    let app_state = app_state(&state);
+    let rx = app_state.event_tx.subscribe();
+
+    let stream = BroadcastStream::new(rx).filter_map(|result| {
+        result
+            .ok()
+            .map(|sse_event| Ok(Event::default().event(sse_event.event).data(sse_event.data)))
+    });
+
+    Sse::new(stream).keep_alive(KeepAlive::default())
+}

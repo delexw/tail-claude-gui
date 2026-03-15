@@ -2,6 +2,7 @@
 
 mod commands;
 mod convert;
+mod http_api;
 mod parser;
 mod settings;
 mod state;
@@ -26,6 +27,11 @@ pub fn run() {
             commands::settings::get_settings,
             commands::settings::set_projects_dir,
         ])
+        .setup(|app| {
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(http_api::start_http_server(handle));
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

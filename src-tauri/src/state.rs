@@ -1,8 +1,18 @@
 use std::sync::Mutex;
+use tokio::sync::broadcast;
 
 use crate::parser::cache::SessionCache;
 use crate::settings::Settings;
 use crate::watcher::WatcherHandle;
+
+/// A Server-Sent Event destined for browser clients.
+#[derive(Clone, Debug)]
+pub struct SseEvent {
+    /// Event name, e.g. "session-update" or "picker-refresh".
+    pub event: String,
+    /// JSON-serialized payload.
+    pub data: String,
+}
 
 /// AppState holds shared state managed by Tauri.
 pub struct AppState {
@@ -13,16 +23,20 @@ pub struct AppState {
     /// Ongoing status reported by the session watcher for the currently viewed session.
     /// (session_path, is_ongoing) — kept in sync by the session watcher loop.
     pub watched_session_ongoing: Mutex<Option<(String, bool)>>,
+    /// Broadcast channel for SSE — watchers send events here, HTTP clients subscribe.
+    pub event_tx: broadcast::Sender<SseEvent>,
 }
 
 impl AppState {
     pub fn new() -> Self {
+        let (event_tx, _) = broadcast::channel(64);
         Self {
             session_watcher: Mutex::new(None),
             picker_watcher: Mutex::new(None),
             session_cache: Mutex::new(SessionCache::new()),
             settings: Mutex::new(crate::settings::load_settings()),
             watched_session_ongoing: Mutex::new(None),
+            event_tx,
         }
     }
 
@@ -86,5 +100,13 @@ impl AppState {
                 s.is_ongoing = ongoing;
             }
         }
+    }
+
+    /// Broadcast an SSE event to all connected browser clients.
+    pub fn broadcast(&self, event: &str, data: &str) {
+        let _ = self.event_tx.send(SseEvent {
+            event: event.to_string(),
+            data: data.to_string(),
+        });
     }
 }

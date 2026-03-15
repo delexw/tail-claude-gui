@@ -2,56 +2,105 @@
  * Safe wrapper around Tauri's `invoke`.
  *
  * In the Tauri webview it delegates to the real IPC bridge.
- * In a plain browser it provides localStorage-backed fallbacks for
- * settings commands so the app remains functional during `npm run dev`.
+ * In a plain browser it calls the Rust backend's HTTP API.
  */
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { isTauri } from "./isTauri";
+import { API_BASE } from "./config";
 
-const STORAGE_KEY = "cct_projects_dir";
+// ---------------------------------------------------------------------------
+// Route map — add new commands here without touching invoke logic (OCP).
+// ---------------------------------------------------------------------------
 
-function defaultDir(): string {
-  return "~/.claude/projects";
+interface Route {
+  method?: "POST";
+  path: string | ((args: Record<string, unknown>) => string);
+  body?: (args: Record<string, unknown>) => unknown;
 }
 
-/** Web-mode handler for known Tauri commands. */
-function webInvoke<T>(cmd: string, args?: Record<string, unknown>): T {
-  switch (cmd) {
-    case "get_settings": {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      return {
-        projects_dir: stored,
-        default_dir: defaultDir(),
-      } as T;
-    }
-    case "set_projects_dir": {
-      const path = (args?.path as string | null) ?? null;
-      if (path) {
-        localStorage.setItem(STORAGE_KEY, path);
-      } else {
-        localStorage.removeItem(STORAGE_KEY);
-      }
-      return {
-        projects_dir: path,
-        default_dir: defaultDir(),
-      } as T;
-    }
-    case "get_project_dirs": {
-      const dir = localStorage.getItem(STORAGE_KEY) ?? defaultDir();
-      return [dir] as T;
-    }
-    // Commands that require the Rust backend — return empty/no-op
-    case "discover_sessions":
-      return [] as T;
-    case "watch_session":
-    case "unwatch_session":
-    case "watch_picker":
-    case "unwatch_picker":
-      return undefined as T;
-    default:
-      throw new Error(`[web] Tauri command "${cmd}" is not available in browser mode`);
+/** Declarative mapping from Tauri command names to HTTP endpoints. */
+const routes: Record<string, Route> = {
+  get_settings: { path: "/api/settings" },
+  set_projects_dir: {
+    method: "POST",
+    path: "/api/settings/dir",
+    body: (a) => ({ path: a.path ?? null }),
+  },
+  get_project_dirs: { path: "/api/project-dirs" },
+  discover_sessions: {
+    path: (a) => {
+      const dirs = (a.projectDirs as string[]) ?? [];
+      return `/api/sessions?dirs=${encodeURIComponent(dirs.join(","))}`;
+    },
+  },
+  load_session: {
+    method: "POST",
+    path: "/api/session/load",
+    body: (a) => ({ path: a.path }),
+  },
+  get_session_meta: {
+    path: (a) => `/api/session/meta?path=${encodeURIComponent(String(a.path ?? ""))}`,
+  },
+  watch_session: {
+    method: "POST",
+    path: "/api/session/watch",
+    body: (a) => ({ path: a.path }),
+  },
+  unwatch_session: { method: "POST", path: "/api/session/unwatch" },
+  watch_picker: {
+    method: "POST",
+    path: "/api/picker/watch",
+    body: (a) => ({ projectDirs: a.projectDirs }),
+  },
+  unwatch_picker: { method: "POST", path: "/api/picker/unwatch" },
+  get_git_info: {
+    path: (a) => `/api/git-info?cwd=${encodeURIComponent(String(a.cwd ?? ""))}`,
+  },
+  get_debug_log: {
+    path: (a) => {
+      const params = new URLSearchParams();
+      params.set("path", String(a.sessionPath ?? ""));
+      if (a.minLevel) params.set("minLevel", String(a.minLevel));
+      if (a.filterText) params.set("filterText", String(a.filterText));
+      return `/api/debug-log?${params}`;
+    },
+  },
+};
+
+// ---------------------------------------------------------------------------
+// HTTP transport (SRP — only handles fetch, not routing).
+// ---------------------------------------------------------------------------
+
+async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...init?.headers },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error ?? res.statusText);
   }
+  const text = await res.text();
+  return text ? (JSON.parse(text) as T) : (undefined as T);
 }
+
+/** Resolve a route to a fetch call. */
+async function httpInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  const route = routes[cmd];
+  if (!route) {
+    throw new Error(`[web] Unknown command "${cmd}"`);
+  }
+  const a = args ?? {};
+  const path = typeof route.path === "function" ? route.path(a) : route.path;
+  const init: RequestInit = {};
+  if (route.method) init.method = route.method;
+  if (route.body) init.body = JSON.stringify(route.body(a));
+  return fetchJson<T>(`${API_BASE}${path}`, init);
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
 
 /**
  * Drop-in replacement for `import { invoke } from "@tauri-apps/api/core"`.
@@ -61,5 +110,5 @@ export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Pr
   if (isTauri) {
     return tauriInvoke<T>(cmd, args);
   }
-  return webInvoke<T>(cmd, args);
+  return httpInvoke<T>(cmd, args);
 }

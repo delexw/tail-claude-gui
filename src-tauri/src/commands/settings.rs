@@ -12,7 +12,7 @@ pub struct SettingsResponse {
     pub default_dir: String,
 }
 
-fn platform_default_dir() -> String {
+pub fn platform_default_dir() -> String {
     dirs::home_dir()
         .map(|h| {
             h.join(".claude")

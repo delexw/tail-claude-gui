@@ -210,6 +210,13 @@ pub fn start_session_watcher(
                         session_totals,
                     };
 
+                    // Broadcast to SSE clients (HTTP API).
+                    if let Some(state) = app.try_state::<crate::state::AppState>() {
+                        if let Ok(json) = serde_json::to_string(&payload) {
+                            state.broadcast("session-update", &json);
+                        }
+                    }
+
                     let _ = app.emit("session-update", payload);
                 }
             }
@@ -289,6 +296,14 @@ pub fn start_picker_watcher(project_dirs: Vec<String>, app: AppHandle) -> Watche
                     }
 
                     let payload = PickerRefreshPayload { sessions };
+
+                    // Broadcast to SSE clients (HTTP API).
+                    if let Some(state) = app.try_state::<crate::state::AppState>() {
+                        if let Ok(json) = serde_json::to_string(&payload) {
+                            state.broadcast("picker-refresh", &json);
+                        }
+                    }
+
                     let _ = app.emit("picker-refresh", payload);
                 }
             }
