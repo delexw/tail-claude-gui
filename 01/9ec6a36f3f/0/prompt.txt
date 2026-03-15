@@ -132,3 +132,7 @@ Read the output file to retrieve the result: /private/tmp/claude-502/-Users-yang
 <summary>Background command "Start Vite dev server" completed (exit code 0)</summary>
 </task-notification>
 Read the output file to retrieve the result: /private/tmp/claude-502/-Users-yang-liu-Envato-others-tail-claude-gui/5a2c57df-1415-46b8-bb17-0da4bc66818d/tasks/bsh1cga0b.output
+
+---
+
+/git-commit
