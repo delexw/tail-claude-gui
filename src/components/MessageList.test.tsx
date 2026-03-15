@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
+import { createRef } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MessageList } from "./MessageList";
 import type { DisplayMessage } from "../types";
+import type { ViewActions } from "../hooks/useViewActions";
 
 function makeMessage(overrides: Partial<DisplayMessage> = {}): DisplayMessage {
   return {
@@ -38,6 +40,9 @@ function defaultProps(overrides: Partial<Parameters<typeof MessageList>[0]> = {}
     onSelect: vi.fn(),
     onToggle: vi.fn(),
     onOpenDetail: vi.fn(),
+    viewActionsRef: createRef() as React.MutableRefObject<ViewActions>,
+    onExpandAll: vi.fn(),
+    onCollapseAll: vi.fn(),
     ...overrides,
   };
 }

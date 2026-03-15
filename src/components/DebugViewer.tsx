@@ -1,18 +1,20 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import type { DebugEntry } from "../types";
 import { useToggleSet } from "../hooks/useToggleSet";
 import { useScrollToSelected } from "../hooks/useScrollToSelected";
+import { useRegisterViewActions, type ViewActionsRef } from "../hooks/useViewActions";
 
 type DebugLevel = "all" | "warn" | "error";
 
 interface DebugViewerProps {
   entries: DebugEntry[];
+  viewActionsRef: ViewActionsRef;
 }
 
-export function DebugViewer({ entries }: DebugViewerProps) {
+export function DebugViewer({ entries, viewActionsRef }: DebugViewerProps) {
   const [levelFilter, setLevelFilter] = useState<DebugLevel>("all");
   const [searchText, setSearchText] = useState("");
-  const { set: expandedSet, toggle: toggleExpand, clear: clearExpanded } = useToggleSet();
+  const { set: expandedSet, toggle: toggleExpand, clear: clearExpanded, addAll } = useToggleSet();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const bodyRef = useRef<HTMLDivElement>(null);
   const selectedRef = useScrollToSelected(selectedIndex);
@@ -47,8 +49,12 @@ export function DebugViewer({ entries }: DebugViewerProps) {
     }
   }, [filtered.length, selectedIndex]);
 
-  // cycleLevelFilter is available for keyboard shortcut integration
-  // const cycleLevelFilter = useCallback(() => { ... }, []);
+  const debugExpandAll = useCallback(() => {
+    const indices = filtered.map((_, i) => i).filter((i) => !!filtered[i].extra);
+    addAll(indices);
+  }, [filtered, addAll]);
+
+  useRegisterViewActions(viewActionsRef, { expandAll: debugExpandAll, collapseAll: clearExpanded });
 
   return (
     <div className="debug-viewer">

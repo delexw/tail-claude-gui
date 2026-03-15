@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from "react";
 import { useScrollToSelected } from "../hooks/useScrollToSelected";
 import { useAutoScroll } from "../hooks/useAutoScroll";
+import { useRegisterViewActions, type ViewActionsRef } from "../hooks/useViewActions";
 import type { DisplayMessage } from "../types";
 import { MessageItem } from "./MessageItem";
 
@@ -12,6 +13,9 @@ interface MessageListProps {
   onSelect: (index: number) => void;
   onToggle: (index: number) => void;
   onOpenDetail: (index: number) => void;
+  viewActionsRef: ViewActionsRef;
+  onExpandAll: () => void;
+  onCollapseAll: () => void;
 }
 
 export function MessageList({
@@ -22,7 +26,11 @@ export function MessageList({
   onSelect,
   onToggle,
   onOpenDetail,
+  viewActionsRef,
+  onExpandAll,
+  onCollapseAll,
 }: MessageListProps) {
+  useRegisterViewActions(viewActionsRef, { expandAll: onExpandAll, collapseAll: onCollapseAll });
   const listRef = useAutoScroll<HTMLDivElement>(messages.length);
   const selectedRef = useScrollToSelected(selectedIndex);
 

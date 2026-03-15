@@ -9,6 +9,7 @@ import { useToggleSet } from "../hooks/useToggleSet";
 import { useScrollToSelected } from "../hooks/useScrollToSelected";
 import { useAutoScroll } from "../hooks/useAutoScroll";
 import { useKeyboard } from "../hooks/useKeyboard";
+import { useRegisterViewActions, type ViewActionsRef } from "../hooks/useViewActions";
 import { BackButton } from "./BackButton";
 import { ResizeHandle } from "./ResizeHandle";
 import { OngoingDots } from "./OngoingDots";
@@ -48,10 +49,21 @@ interface MessageDetailProps {
   message: DisplayMessage;
   ongoing?: boolean;
   onBack: () => void;
+  viewActionsRef: ViewActionsRef;
 }
 
-export function MessageDetail({ message: msg, ongoing, onBack }: MessageDetailProps) {
-  const { set: expandedItems, toggle: toggleItem } = useToggleSet();
+export function MessageDetail({
+  message: msg,
+  ongoing,
+  onBack,
+  viewActionsRef,
+}: MessageDetailProps) {
+  const {
+    set: expandedItems,
+    toggle: toggleItem,
+    addAll: expandAllItems,
+    clear: clearItems,
+  } = useToggleSet();
   const [selectedItem, setSelectedItem] = useState(0);
   const scrollRef = useScrollToSelected(selectedItem);
   const [panelStack, setPanelStack] = useState<PanelEntry[]>([]);
@@ -61,6 +73,12 @@ export function MessageDetail({ message: msg, ongoing, onBack }: MessageDetailPr
   useAutoScroll(msg.items.length, bodyRef);
   const savedScroll = useRef<number | null>(null);
   const panelRefs = useRef<Map<number, ColumnNav>>(new Map());
+
+  const detailExpandAll = useCallback(() => {
+    expandAllItems(msg.items.map((_, i) => i));
+  }, [msg.items, expandAllItems]);
+
+  useRegisterViewActions(viewActionsRef, { expandAll: detailExpandAll, collapseAll: clearItems });
 
   // Keep panel stack items fresh when the session watcher sends updated data.
   // Without this, subagent_ongoing and subagent_messages would be stale.

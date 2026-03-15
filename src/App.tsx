@@ -5,6 +5,7 @@ import { useSession } from "./hooks/useSession";
 import { usePicker } from "./hooks/usePicker";
 import { useToggleSet } from "./hooks/useToggleSet";
 import { useKeyboard } from "./hooks/useKeyboard";
+import { useViewActionsRef, useViewActionCallbacks } from "./hooks/useViewActions";
 import { SessionPicker } from "./components/SessionPicker";
 import { MessageList } from "./components/MessageList";
 import { MessageDetail } from "./components/MessageDetail";
@@ -120,19 +121,19 @@ export function App() {
     setView("detail");
   }, []);
 
-  // -- Extracted action callbacks for toolbar + keyboard --
+  // -- View actions: each view registers its own expand/collapse handlers --
 
-  const expandAll = useCallback(() => {
+  const viewActionsRef = useViewActionsRef();
+  const { expandAll, collapseAll } = useViewActionCallbacks(viewActionsRef);
+
+  // Register message list expand/collapse when in list view.
+  const listExpandAll = useCallback(() => {
     const claudeIndices: number[] = [];
     session.messages.forEach((msg, i) => {
       if (msg.role === "claude") claudeIndices.push(i);
     });
     expandMessages(claudeIndices);
   }, [session.messages, expandMessages]);
-
-  const collapseAll = useCallback(() => {
-    clearExpanded();
-  }, [clearExpanded]);
 
   // Visual top = newest message = last index (display is reversed)
   const jumpToTop = useCallback(() => {
@@ -309,6 +310,9 @@ export function App() {
             onSelect={setSelectedMessage}
             onToggle={toggleMessage}
             onOpenDetail={openDetail}
+            viewActionsRef={viewActionsRef}
+            onExpandAll={listExpandAll}
+            onCollapseAll={clearExpanded}
           />
         );
 
@@ -319,6 +323,7 @@ export function App() {
               message={session.messages[selectedMessage]}
               ongoing={session.ongoing}
               onBack={() => setView("list")}
+              viewActionsRef={viewActionsRef}
             />
           );
         }
@@ -328,7 +333,7 @@ export function App() {
         return <TeamBoard teams={session.teams} />;
 
       case "debug":
-        return <DebugViewer entries={session.debugEntries} />;
+        return <DebugViewer entries={session.debugEntries} viewActionsRef={viewActionsRef} />;
     }
   };
 
