@@ -145,3 +145,7 @@ Read the output file to retrieve the result: /private/tmp/claude-502/-Users-yang
 
 QUestion only: ix: Frontend-side sync. When useSession receives "session-update" with a new ongoing value, App.tsx pushes that to usePicker.updateSessionOngoing(path, ongoing) via a useEffect. This immediately corrects the picker's is_ongoing for the watched session — propagating to both the session list dots and project tree dots.
 Can you elaborate the relation between picker and session?
+
+---
+
+/git-commit
