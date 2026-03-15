@@ -1,0 +1,77 @@
+Based on all logs in the project (Claude Code).,,, what are the challenage to parse JSONL, make right relatiuons etc you have learned so far? What issues are you learning from Claude Code transcription to make the app at this stable working version
+
+---
+
+Based on the tone and style of this blog https://envato.atlassian.net/wiki/spaces/MS/blog/2025/08/13/308379657/AI+-+More+Understanding+of+XML+Tags+In+Claude+Prompt,,, write a one for the learnings  in md file
+
+---
+
+The most intersting part is the opharn agents when starting -> then linked to parent become unopharn after complete
+
+---
+
+No need 6th Challenge — Auto-Scroll That Actually Works... The blog only focus on Claude Code JSONL related. review
+
+---
+
+Status detection is a tree problem, not a file problem — ongoing state must cascade from the deepest active leaf to the root.. It is not realted
+
+---
+
+File watchers must be surgically scoped — glob-watching large directories is a CPU trap. either
+
+---
+
+I've been building [tail-claude-gui](https://github.com/delexw/tail-claude-gui),,, The context is I am building autonmous agents backed by Claude Code, so a good log tracer is helpful to identify prompt issue and agent issue
+
+---
+
+Also say, if you are a GUI lover, it would be a best fit tool. The tool CPU usage is only up to ~10%
+
+---
+
+### Attempt 3: Cascading status with subagents either ?
+
+---
+
+Make a high qualith image for the post?
+
+---
+
+It isn't a Hero Image at all
+
+---
+
+I prefer image wihtout too many texts
+
+---
+
+I prefer with some design
+
+---
+
+continue
+
+---
+
+I mean more drawer desing less texts
+
+---
+
+No title, only more drawer desing
+
+---
+
+Give me 5 topics for Medium post
+
+---
+
+short
+
+---
+
+one or twe words
+
+---
+
+should have some related to claude code?
