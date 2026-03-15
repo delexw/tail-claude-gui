@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.5.0",
+  "checkpoint_id": "984d4e83caa0",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "src/App.tsx",
+    "src/components/DebugViewer.tsx",
+    "src/components/KeybindBar.test.tsx",
+    "src/components/KeybindBar.tsx",
+    "src/components/TeamBoard.test.tsx",
+    "src/components/TeamBoard.tsx",
+    "src/components/ViewToolbar.test.tsx",
+    "src/components/ViewToolbar.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/98/4d4e83caa0/0/metadata.json",
+      "transcript": "/98/4d4e83caa0/0/full.jsonl",
+      "content_hash": "/98/4d4e83caa0/0/content_hash.txt",
+      "prompt": "/98/4d4e83caa0/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 359,
+    "cache_creation_tokens": 1923843,
+    "cache_read_tokens": 48116534,
+    "output_tokens": 97657,
+    "api_call_count": 281
+  }
+}
