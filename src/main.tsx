@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openUrl } from "./lib/openUrl";
 import { App } from "./App";
 import "./styles/global.css";
 

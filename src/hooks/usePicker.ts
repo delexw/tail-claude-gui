@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../lib/invoke";
 import type { SessionInfo } from "../types";
 import { useTauriEvent } from "./useTauriEvent";
 

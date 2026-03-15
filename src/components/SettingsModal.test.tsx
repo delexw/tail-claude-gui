@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { SettingsModal } from "./SettingsModal";
 
 const mockInvoke = vi.fn();
-vi.mock("@tauri-apps/api/core", () => ({
+vi.mock("../lib/invoke", () => ({
   invoke: (...args: unknown[]) => mockInvoke(...args),
 }));
 

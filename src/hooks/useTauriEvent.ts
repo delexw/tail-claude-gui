@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { listen, type UnlistenFn } from "../lib/listen";
 
 /**
  * Subscribe to a Tauri event with automatic setup/teardown and cancellation safety.

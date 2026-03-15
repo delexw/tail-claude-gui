@@ -12,7 +12,26 @@
   },
   "rules": {
     "react/react-in-jsx-scope": "off",
-    "import/no-unassigned-import": "off"
+    "import/no-unassigned-import": "off",
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "@tauri-apps/api/core",
+            "message": "Use src/lib/invoke.ts instead."
+          },
+          {
+            "name": "@tauri-apps/api/event",
+            "message": "Use src/lib/listen.ts instead."
+          },
+          {
+            "name": "@tauri-apps/plugin-opener",
+            "message": "Use isTauri guard in src/main.tsx instead."
+          }
+        ]
+      }
+    ]
   },
   "settings": {
     "react": {
@@ -26,5 +45,13 @@
     "browser": true
   },
   "globals": {},
-  "ignorePatterns": ["dist", "src-tauri/gen", "src-tauri/target"]
+  "ignorePatterns": ["dist", "src-tauri/gen", "src-tauri/target"],
+  "overrides": [
+    {
+      "files": ["src/lib/invoke.ts", "src/lib/listen.ts", "src/lib/openUrl.ts"],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    }
+  ]
 }
