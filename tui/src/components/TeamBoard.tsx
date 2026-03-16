@@ -42,6 +42,9 @@ function memberColor(color: string): string {
 }
 
 export function TeamBoard({ teams }: TeamBoardProps) {
+  const cols = process.stdout.columns || 80;
+  const ruleWidth = Math.min(cols - 4, 80);
+
   if (teams.length === 0) {
     return (
       <Box paddingX={1}>
@@ -52,51 +55,64 @@ export function TeamBoard({ teams }: TeamBoardProps) {
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      <Box marginBottom={1}>
-        <Text bold>Teams ({teams.length})</Text>
-      </Box>
-
       {teams
         .filter((t) => !t.deleted)
-        .map((team) => (
-          <Box key={team.name} flexDirection="column" marginBottom={1}>
-            {/* Team header */}
-            <Box gap={1}>
-              <Text bold color={colors.itemAgent}>
-                {team.name}
-              </Text>
-              {team.description ? <Text dimColor>— {team.description}</Text> : null}
-            </Box>
+        .map((team) => {
+          // Section divider: "── team-name ──────" (matches Go TUI)
+          const nameLen = team.name.length + 2; // " name "
+          const leftDash = "── ";
+          const rightDash = " " + "─".repeat(Math.max(4, ruleWidth - nameLen - leftDash.length - 1));
 
-            {/* Members */}
-            <Box paddingLeft={2} gap={1}>
-              <Text dimColor>Members:</Text>
-              {team.members.map((m) => {
-                const clr = team.member_colors[m] || "white";
-                const isOngoing = team.member_ongoing[m] ?? false;
-                return (
-                  <Box key={m} gap={0}>
-                    <Text color={memberColor(clr)}>{m}</Text>
-                    {isOngoing ? <OngoingDot /> : null}
-                  </Box>
-                );
-              })}
-            </Box>
+          // Summary: "N members · M/T done"
+          const doneCount = team.tasks.filter((t) => t.status === "completed").length;
+          const summary = `${team.members.length} members · ${doneCount}/${team.tasks.length} done`;
 
-            {/* Tasks */}
-            {team.tasks.length > 0 && (
-              <Box flexDirection="column" paddingLeft={2}>
-                {team.tasks.map((task) => (
-                  <Box key={task.id} gap={1}>
-                    <Text color={statusColor(task.status)}>{statusIcon(task.status)}</Text>
-                    <Text>{task.subject}</Text>
-                    {task.owner ? <Text dimColor>({task.owner})</Text> : null}
-                  </Box>
-                ))}
+          return (
+            <Box key={team.name} flexDirection="column" marginBottom={1}>
+              {/* Section divider — Go TUI style */}
+              <Box>
+                <Text color={colors.textMuted}>{leftDash}</Text>
+                <Text bold color={colors.itemAgent}>{team.name}</Text>
+                <Text color={colors.textMuted}>{rightDash}</Text>
               </Box>
-            )}
-          </Box>
-        ))}
+
+              {/* Summary line */}
+              <Box paddingLeft={2}>
+                <Text dimColor>{summary}</Text>
+              </Box>
+
+              {/* Members — 2-space separation (matches Go TUI) */}
+              <Box paddingLeft={2}>
+                {team.members.map((m, idx) => {
+                  const clr = team.member_colors[m] || "white";
+                  const isOngoing = team.member_ongoing[m] ?? false;
+                  return (
+                    <Box key={m}>
+                      {idx > 0 ? <Text>  </Text> : null}
+                      <Text color={memberColor(clr)}>{m}</Text>
+                      {isOngoing ? <OngoingDot /> : null}
+                    </Box>
+                  );
+                })}
+              </Box>
+
+              {/* Tasks — Go TUI format: "  #ID  {status} {spinner?}  Subject  {Owner}" */}
+              {team.tasks.length > 0 && (
+                <Box flexDirection="column" paddingLeft={2}>
+                  {team.tasks.map((task) => (
+                    <Box key={task.id} gap={1}>
+                      <Text dimColor>#{task.id}</Text>
+                      <Text color={statusColor(task.status)}>{statusIcon(task.status)}</Text>
+                      <Text>{task.subject}</Text>
+                      <Box flexGrow={1} />
+                      {task.owner ? <Text dimColor>{task.owner}</Text> : null}
+                    </Box>
+                  ))}
+                </Box>
+              )}
+            </Box>
+          );
+        })}
     </Box>
   );
 }
