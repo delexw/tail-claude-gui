@@ -66,7 +66,11 @@ export function DebugViewer({ entries, selectedIndex }: DebugViewerProps) {
               {entry.level.toUpperCase().padEnd(5)}{" "}
             </Text>
             {/* Category in brackets (dim agent color) */}
-            {entry.category ? <Text color={colors.itemAgent} dimColor>[{entry.category}] </Text> : null}
+            {entry.category ? (
+              <Text color={colors.itemAgent} dimColor>
+                [{entry.category}]{" "}
+              </Text>
+            ) : null}
             {/* Message */}
             <Text dimColor={!isSelected}>{truncate(entry.message, cols - 35)}</Text>
             {/* Repeat count (right-aligned, orange) */}

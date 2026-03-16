@@ -94,12 +94,7 @@ export function SessionPicker({ sessions, loading, error, selectedIndex }: Sessi
   return (
     <Box flexDirection="column">
       {/* Header bar */}
-      <Box
-        paddingX={1}
-        gap={2}
-        borderStyle="round"
-        borderColor={colors.border}
-      >
+      <Box paddingX={1} gap={2} borderStyle="round" borderColor={colors.border}>
         <Text bold>Sessions ({sessions.length})</Text>
         {totalTokens > 0 && <Text dimColor>{formatTokens(totalTokens)} tok</Text>}
         {totalCost > 0 && <Text color={colors.tokenHigh}>{formatCost(totalCost)}</Text>}
@@ -157,31 +152,29 @@ export function SessionPicker({ sessions, loading, error, selectedIndex }: Sessi
                     <Text color={isSelected ? colors.accent : colors.border}>
                       {isSelected ? " \u25B8 " : " \u2502 "}
                     </Text>
-                    {model && (
-                      <Text color={modelColor(s.model)}>
-                        {model.padEnd(10)}
-                      </Text>
-                    )}
+                    {model && <Text color={modelColor(s.model)}>{model.padEnd(10)}</Text>}
                     {s.git_branch ? (
                       <Text color={colors.gitBranch}>
-                        {" "}{"\uE0A0"} {truncate(s.git_branch, 20)}
+                        {" "}
+                        {"\uE0A0"} {truncate(s.git_branch, 20)}
                       </Text>
                     ) : null}
                     <Text dimColor>
-                      {" "}{"\uF086"} {String(s.turn_count).padStart(3)}
+                      {" "}
+                      {"\uF086"} {String(s.turn_count).padStart(3)}
                     </Text>
                     {s.total_tokens > 0 && (
                       <Text color={s.total_tokens > 150000 ? colors.tokenHigh : colors.textDim}>
-                        {" "}{"\uEDE8"} {formatTokens(s.total_tokens)}
+                        {" "}
+                        {"\uEDE8"} {formatTokens(s.total_tokens)}
                       </Text>
                     )}
                     {s.cost_usd > 0 && (
-                      <Text color={colors.tokenHigh}>
-                        {" "}{formatCost(s.cost_usd)}
-                      </Text>
+                      <Text color={colors.tokenHigh}> {formatCost(s.cost_usd)}</Text>
                     )}
                     <Text dimColor>
-                      {" "}{"\uF017"} {timeAgo(s.mod_time)}
+                      {" "}
+                      {"\uF017"} {timeAgo(s.mod_time)}
                     </Text>
                   </Box>
                   {/* Thin separator — matches Go TUI's horizontal rule between cards */}

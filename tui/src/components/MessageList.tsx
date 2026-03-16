@@ -85,8 +85,7 @@ export function MessageList({ messages, selectedIndex, expandedSet, ongoing }: M
                 color={isSelected ? colors.accent : roleColor(msg.role)}
               >
                 {isSelected ? "\u25B8 " : "  "}
-                {roleIcon(msg.role)}{" "}
-                {msg.role === "claude" ? "Claude" : "User"}
+                {roleIcon(msg.role)} {msg.role === "claude" ? "Claude" : "User"}
               </Text>
               {model ? (
                 <Text color={modelColor(msg.model)} dimColor={!isSelected}>
@@ -145,9 +144,7 @@ export function MessageList({ messages, selectedIndex, expandedSet, ongoing }: M
                         </Text>
                       ) : item.item_type === "Subagent" ? (
                         <Text
-                          color={
-                            item.team_color ? getTeamColor(item.team_color) : colors.itemAgent
-                          }
+                          color={item.team_color ? getTeamColor(item.team_color) : colors.itemAgent}
                         >
                           ✦ {item.subagent_type || "Agent"}
                           {item.subagent_desc

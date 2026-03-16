@@ -1,4 +1,4 @@
-import type React from "react";
+import type { ReactNode } from "react";
 import { Box, Text } from "ink";
 import type { DisplayMessage } from "../api.js";
 import { formatTokens, formatDuration } from "../lib/format.js";
@@ -50,64 +50,77 @@ export function StatsBar({ stats }: { stats: Stats }) {
   if (!hasAny(stats)) return null;
 
   // Build parts array, then join with dots (matches Go TUI stat row)
-  const parts: React.ReactNode[] = [];
+  const parts: { id: string; node: ReactNode }[] = [];
 
   if (stats.thinkingCount > 0) {
-    parts.push(
-      <Text key="think" dimColor color={colors.itemThinking}>
-        {"\uF0EB"} {stats.thinkingCount}
-      </Text>,
-    );
+    parts.push({
+      id: "think",
+      node: (
+        <Text dimColor color={colors.itemThinking}>
+          {"\uF0EB"} {stats.thinkingCount}
+        </Text>
+      ),
+    });
   }
   if (stats.toolCount > 0) {
-    parts.push(
-      <Text key="tool" dimColor color={colors.itemTool}>
-        {"\uF0BE0"} {stats.toolCount}
-      </Text>,
-    );
+    parts.push({
+      id: "tool",
+      node: (
+        <Text dimColor color={colors.itemTool}>
+          {"\uF0BE0"} {stats.toolCount}
+        </Text>
+      ),
+    });
   }
   if (stats.outputCount > 0) {
-    parts.push(
-      <Text key="out" dimColor>
-        {"\uF0182"} {stats.outputCount}
-      </Text>,
-    );
+    parts.push({
+      id: "out",
+      node: (
+        <Text dimColor>
+          {"\uF0182"} {stats.outputCount}
+        </Text>
+      ),
+    });
   }
   if (stats.agentCount > 0) {
-    parts.push(
-      <Text key="agent" dimColor color={colors.itemAgent}>
-        {"\uF167A"} {stats.agentCount}
-      </Text>,
-    );
+    parts.push({
+      id: "agent",
+      node: (
+        <Text dimColor color={colors.itemAgent}>
+          {"\uF167A"} {stats.agentCount}
+        </Text>
+      ),
+    });
   }
   if (stats.spawnCount > 0) {
-    parts.push(
-      <Text key="spawn" dimColor>
-        ↗ {stats.spawnCount}
-      </Text>,
-    );
+    parts.push({
+      id: "spawn",
+      node: <Text dimColor>↗ {stats.spawnCount}</Text>,
+    });
   }
   if (stats.tokens > 0) {
-    parts.push(
-      <Text key="tok" dimColor color={stats.tokens > 150000 ? colors.tokenHigh : undefined}>
-        {formatTokens(stats.tokens)}
-      </Text>,
-    );
+    parts.push({
+      id: "tok",
+      node: (
+        <Text dimColor color={stats.tokens > 150000 ? colors.tokenHigh : undefined}>
+          {formatTokens(stats.tokens)}
+        </Text>
+      ),
+    });
   }
   if (stats.durationMs > 0) {
-    parts.push(
-      <Text key="dur" dimColor>
-        {formatDuration(stats.durationMs)}
-      </Text>,
-    );
+    parts.push({
+      id: "dur",
+      node: <Text dimColor>{formatDuration(stats.durationMs)}</Text>,
+    });
   }
 
   return (
     <Box>
-      {parts.map((part, i) => (
-        <Box key={i}>
-          {i > 0 && <Dot />}
-          {part}
+      {parts.map((part, idx) => (
+        <Box key={part.id}>
+          {idx > 0 && <Dot />}
+          {part.node}
         </Box>
       ))}
     </Box>

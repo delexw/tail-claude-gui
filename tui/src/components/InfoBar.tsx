@@ -105,9 +105,7 @@ export function InfoBar({ meta, messages, sessionTotals, sessionPath, ongoing }:
 
       {/* Right: ctx% · tokens · cost · ongoing */}
       <Box>
-        {ctxPct >= 0 ? (
-          <Text color={getContextColor(ctxPct)}>ctx {ctxPct}%</Text>
-        ) : null}
+        {ctxPct >= 0 ? <Text color={getContextColor(ctxPct)}>ctx {ctxPct}%</Text> : null}
         {sessionTotals.total_tokens > 0 ? (
           <>
             <Dot />

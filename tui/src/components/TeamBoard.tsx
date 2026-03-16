@@ -61,7 +61,8 @@ export function TeamBoard({ teams }: TeamBoardProps) {
           // Section divider: "── team-name ──────" (matches Go TUI)
           const nameLen = team.name.length + 2; // " name "
           const leftDash = "── ";
-          const rightDash = " " + "─".repeat(Math.max(4, ruleWidth - nameLen - leftDash.length - 1));
+          const rightDash =
+            " " + "─".repeat(Math.max(4, ruleWidth - nameLen - leftDash.length - 1));
 
           // Summary: "N members · M/T done"
           const doneCount = team.tasks.filter((t) => t.status === "completed").length;
@@ -72,7 +73,9 @@ export function TeamBoard({ teams }: TeamBoardProps) {
               {/* Section divider — Go TUI style */}
               <Box>
                 <Text color={colors.textMuted}>{leftDash}</Text>
-                <Text bold color={colors.itemAgent}>{team.name}</Text>
+                <Text bold color={colors.itemAgent}>
+                  {team.name}
+                </Text>
                 <Text color={colors.textMuted}>{rightDash}</Text>
               </Box>
 
@@ -88,7 +91,7 @@ export function TeamBoard({ teams }: TeamBoardProps) {
                   const isOngoing = team.member_ongoing[m] ?? false;
                   return (
                     <Box key={m}>
-                      {idx > 0 ? <Text>  </Text> : null}
+                      {idx > 0 ? <Text> </Text> : null}
                       <Text color={memberColor(clr)}>{m}</Text>
                       {isOngoing ? <OngoingDot /> : null}
                     </Box>

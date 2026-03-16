@@ -1,7 +1,14 @@
 import type { ReactNode } from "react";
 import { Box, Text } from "ink";
 import type { DisplayMessage, DisplayItem } from "../api.js";
-import { formatDuration, formatTokens, truncate, roleColor, roleIcon, formatJson } from "../lib/format.js";
+import {
+  formatDuration,
+  formatTokens,
+  truncate,
+  roleColor,
+  roleIcon,
+  formatJson,
+} from "../lib/format.js";
 import { colors, getItemColor, getTeamColor } from "../lib/theme.js";
 import { getItemIcon, getItemName, getItemSummary } from "../lib/items.js";
 import { StatsBar, statsFromMessage } from "./StatsBar.js";
@@ -122,27 +129,19 @@ export function DetailView({
                   {/* Item header row — Go TUI aligned format */}
                   <Box>
                     {/* Cursor + icon + name (fixed width) */}
-                    <Text
-                      bold={isSelected}
-                      inverse={isSelected}
-                      color={accentClr}
-                    >
+                    <Text bold={isSelected} inverse={isSelected} color={accentClr}>
                       {isExpanded ? "\u02C5" : "\u02C3"} {getItemIcon(item)}{" "}
                       {getItemName(item).padEnd(maxNameLen)}
                     </Text>
                     {/* Summary */}
                     {getItemSummary(item) ? (
-                      <Text dimColor>
-                        {" "}{truncate(getItemSummary(item), summaryMaxLen)}
-                      </Text>
+                      <Text dimColor> {truncate(getItemSummary(item), summaryMaxLen)}</Text>
                     ) : null}
                     {/* Spacer */}
                     <Box flexGrow={1} />
                     {/* Right-aligned: tokens + duration */}
                     {item.token_count > 0 ? (
-                      <Text dimColor>
-                        {formatTokens(item.token_count).padStart(9)}
-                      </Text>
+                      <Text dimColor>{formatTokens(item.token_count).padStart(9)}</Text>
                     ) : null}
                     {item.duration_ms > 0 ? (
                       <Text dimColor> {formatDuration(item.duration_ms).padEnd(5)}</Text>
@@ -150,7 +149,8 @@ export function DetailView({
                     {item.subagent_ongoing ? <OngoingDot /> : null}
                     {hasAgent ? (
                       <Text color={teamClr || colors.itemAgent} dimColor>
-                        {" "}[{item.subagent_messages.length} msg]
+                        {" "}
+                        [{item.subagent_messages.length} msg]
                       </Text>
                     ) : null}
                   </Box>

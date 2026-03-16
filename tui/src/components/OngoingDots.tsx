@@ -17,13 +17,19 @@ export function OngoingDot() {
  * Glyph: U+EABC (nf-cod-circle, filled circle)
  */
 const BEAD = "\uEABC";
-const BEAD_COLORS = [colors.accent, colors.info, colors.textSecondary, colors.textDim, colors.textMuted];
+const BEADS = [
+  { id: "head", color: colors.accent },
+  { id: "near", color: colors.info },
+  { id: "mid", color: colors.textSecondary },
+  { id: "far", color: colors.textDim },
+  { id: "tail", color: colors.textMuted },
+];
 
 export function BrailleSpinner() {
   return (
     <Box>
-      {BEAD_COLORS.map((clr, i) => (
-        <Text key={i} color={clr}>
+      {BEADS.map((b) => (
+        <Text key={b.id} color={b.color}>
           {BEAD}
         </Text>
       ))}
