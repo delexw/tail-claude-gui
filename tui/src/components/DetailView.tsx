@@ -84,9 +84,8 @@ export function DetailView({ message, selectedItem, expandedItems, ongoing }: De
   const cols = process.stdout.columns || 80;
   const stats = statsFromMessage(message);
 
-  // Each card takes ~2-4 rows
-  const rowBudget = (process.stdout.rows || 24) - 10;
-  const windowSize = Math.max(3, Math.floor(rowBudget / 3));
+  const rows = process.stdout.rows || 24;
+  const windowSize = Math.max(4, rows - 8);
 
   const items = message.items;
   let start = Math.max(0, selectedItem - Math.floor(windowSize / 2));

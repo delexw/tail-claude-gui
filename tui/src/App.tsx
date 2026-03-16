@@ -373,7 +373,7 @@ export function App() {
       )}
 
       {/* Main body: sidebar + content */}
-      <Box flexGrow={1} flexDirection="row">
+      <Box flexDirection="row">
         {/* Project tree sidebar — always visible */}
         <ProjectTree
           sessions={allSessions}
@@ -383,7 +383,7 @@ export function App() {
         />
 
         {/* Main content */}
-        <Box flexGrow={1} flexDirection="column">
+        <Box flexDirection="column" flexGrow={1}>
           {renderView()}
         </Box>
       </Box>

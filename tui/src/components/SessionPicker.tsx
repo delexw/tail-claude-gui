@@ -163,9 +163,8 @@ export function SessionPicker({
     );
   }
 
-  // Each card takes ~3 rows; adjust window
-  const rowBudget = (process.stdout.rows || 24) - 6;
-  const windowSize = Math.max(4, Math.floor(rowBudget / 3));
+  const rows = process.stdout.rows || 24;
+  const windowSize = Math.max(6, rows - 6);
   const half = Math.floor(windowSize / 2);
   let start = Math.max(0, selected - half);
   const end = Math.min(flatList.length, start + windowSize);

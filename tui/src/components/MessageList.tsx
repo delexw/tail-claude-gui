@@ -14,9 +14,12 @@ interface MessageListProps {
 
 export function MessageList({ messages, selectedIndex, expandedSet, ongoing }: MessageListProps) {
   const cols = process.stdout.columns || 80;
-  // Each card takes ~3-5 rows; adjust window accordingly
-  const rowBudget = (process.stdout.rows || 24) - 6;
-  const windowSize = Math.max(4, Math.floor(rowBudget / 3));
+  // Estimate visible messages based on terminal height.
+  // Collapsed messages are ~3 lines, but we want to fill the viewport
+  // without leaving empty space. Over-estimating slightly is fine —
+  // Ink will just clip the bottom.
+  const rows = process.stdout.rows || 24;
+  const windowSize = Math.max(6, rows - 4);
 
   let start = Math.max(0, selectedIndex - Math.floor(windowSize / 2));
   const end = Math.min(messages.length, start + windowSize);
