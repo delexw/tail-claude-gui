@@ -680,9 +680,15 @@ pub fn inject_orphan_subagents(chunks: &mut Vec<Chunk>, processes: &mut [Subagen
 
     // Always create a dedicated synthetic AI chunk for orphans, timestamped
     // to the earliest orphan's start_time so it sorts naturally.
+    let label = if items.len() == 1 {
+        "Unlinked subagent (from before /clear)".to_string()
+    } else {
+        format!("{} unlinked subagents (from before /clear)", items.len())
+    };
     chunks.push(Chunk {
         chunk_type: ChunkType::AI,
         timestamp: processes[orphan_indices[0]].start_time,
+        text: label,
         items,
         ..Default::default()
     });

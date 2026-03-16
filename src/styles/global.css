@@ -72,6 +72,9 @@
   --icon-cron: #8a8aaa;
   --icon-git: #af5fff;
 
+  /* Agent panel */
+  --agent-panel: #63b3ed;
+
   /* Misc */
   --scrollbar-thumb: #444466;
   --scrollbar-track: transparent;
@@ -1191,7 +1194,7 @@ body {
 }
 
 .message__stat--agents {
-  color: #63b3ed;
+  color: var(--agent-panel);
 }
 
 .message__stat-icon {
@@ -2140,13 +2143,13 @@ body {
 
 /* Panel chevron for subagent items with messages */
 .detail-item__chevron--panel {
-  color: #63b3ed;
+  color: var(--agent-panel);
 }
 
 /* Active subagent highlight in left pane */
 .detail-item--agent-active {
-  background: rgba(99, 179, 237, 0.08);
-  border-left: 2px solid #63b3ed;
+  background: color-mix(in srgb, var(--agent-panel) 8%, transparent);
+  border-left: 2px solid var(--agent-panel);
 }
 
 /* Focused column indicator */
@@ -2168,7 +2171,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: rgba(99, 179, 237, 0.03);
+  background: color-mix(in srgb, var(--agent-panel) 3%, transparent);
 }
 
 .agent-panel__header {
@@ -2177,7 +2180,7 @@ body {
   gap: 8px;
   padding: 10px 16px;
   border-bottom: 1px solid var(--border);
-  background: rgba(99, 179, 237, 0.06);
+  background: color-mix(in srgb, var(--agent-panel) 6%, transparent);
   flex-shrink: 0;
   font-size: 12px;
   min-width: 0;
@@ -2213,7 +2216,7 @@ body {
 
 .agent-panel__type {
   font-weight: 600;
-  color: #63b3ed;
+  color: var(--agent-panel);
 }
 
 .agent-panel__id {
@@ -2270,7 +2273,7 @@ body {
 }
 
 .agent-panel .message--selected {
-  background: rgba(99, 179, 237, 0.08);
+  background: color-mix(in srgb, var(--agent-panel) 8%, transparent);
 }
 
 /* Agent panel content needs scrollable body */
