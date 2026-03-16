@@ -211,7 +211,7 @@ export function App() {
         setSidebarHighlight((i) => Math.max(i - 1, 0));
       } else if (key.return) {
         const entry = projectEntries[sidebarHighlight];
-        if (entry) handleSelectProject(entry.key);
+        if (entry && !entry.isGroup) handleSelectProject(entry.key);
       } else if (input === "l" || key.rightArrow || key.escape) {
         setSidebarFocused(false);
       } else if (input === "q") {
