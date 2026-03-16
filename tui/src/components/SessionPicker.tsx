@@ -11,6 +11,7 @@ import {
   shortModel,
   modelColor,
 } from "../lib/format.js";
+import { colors } from "../lib/theme.js";
 
 interface SessionPickerProps {
   sessions: SessionInfo[];
@@ -156,7 +157,7 @@ export function SessionPicker({
   if (error) {
     return (
       <Box padding={1}>
-        <Text color="red">{error}</Text>
+        <Text color={colors.error}>{error}</Text>
       </Box>
     );
   }
@@ -182,17 +183,17 @@ export function SessionPicker({
         borderLeft={false}
         borderRight={false}
         borderTop={false}
-        borderColor="gray"
+        borderColor={colors.border}
       >
         <Text bold>Sessions ({filtered.length})</Text>
         {totalTokens > 0 && <Text dimColor>{formatTokens(totalTokens)} tok</Text>}
-        {totalCost > 0 && <Text color="yellow">{formatCost(totalCost)}</Text>}
+        {totalCost > 0 && <Text color={colors.tokenHigh}>{formatCost(totalCost)}</Text>}
       </Box>
 
       {/* Search bar */}
       {searchActive && (
         <Box paddingX={1}>
-          <Text color="blue" bold>
+          <Text color={colors.accent} bold>
             / {searchQuery}
           </Text>
           <Text dimColor>█</Text>
@@ -231,7 +232,11 @@ export function SessionPicker({
               if (idx < start || idx >= end) return null;
               const isSelected = idx === selected;
               const model = s.model ? shortModel(s.model) : "";
-              const borderClr = isSelected ? "blue" : s.is_ongoing ? "green" : "gray";
+              const borderClr = isSelected
+                ? colors.accent
+                : s.is_ongoing
+                  ? colors.ongoing
+                  : colors.border;
 
               return (
                 <Box
@@ -247,12 +252,12 @@ export function SessionPicker({
                 >
                   {/* Top line: selection indicator + preview + active badge */}
                   <Box gap={1}>
-                    <Text bold inverse={isSelected} color={isSelected ? "blue" : undefined}>
+                    <Text bold inverse={isSelected} color={isSelected ? colors.accent : undefined}>
                       {isSelected ? "▸ " : "  "}
                       {truncate(s.first_message || s.session_id, cols - 28)}
                     </Text>
                     {s.is_ongoing && (
-                      <Text color="green" bold>
+                      <Text color={colors.ongoing} bold>
                         ● ACTIVE
                       </Text>
                     )}
@@ -262,7 +267,9 @@ export function SessionPicker({
                     {model && <Text color={modelColor(s.model)}>{model}</Text>}
                     <Text dimColor>{s.turn_count} turns</Text>
                     {s.total_tokens > 0 && <Text dimColor>{formatTokens(s.total_tokens)} tok</Text>}
-                    {s.cost_usd > 0 && <Text color="yellow">{formatCost(s.cost_usd)}</Text>}
+                    {s.cost_usd > 0 && (
+                      <Text color={colors.tokenHigh}>{formatCost(s.cost_usd)}</Text>
+                    )}
                     {s.duration_ms > 0 && <Text dimColor>{formatDuration(s.duration_ms)}</Text>}
                     <Text dimColor>{timeAgo(s.mod_time)}</Text>
                   </Box>

@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Box, Text } from "ink";
 import type { DisplayMessage, SessionMeta, SessionTotals } from "../api.js";
 import { formatTokens, formatCost } from "../lib/format.js";
+import { colors, getContextColor } from "../lib/theme.js";
 
 interface InfoBarProps {
   meta: SessionMeta;
@@ -40,22 +41,16 @@ function contextPercent(msgs: DisplayMessage[]): number {
   return -1;
 }
 
-function contextColor(pct: number): string {
-  if (pct < 50) return "green";
-  if (pct < 80) return "yellow";
-  return "red";
-}
-
 function modeColor(mode: string): string {
   switch (mode) {
     case "bypassPermissions":
-      return "red";
+      return colors.pillBypass;
     case "acceptEdits":
-      return "magenta";
+      return colors.pillAcceptEdits;
     case "plan":
-      return "green";
+      return colors.pillPlan;
     default:
-      return "white";
+      return colors.textPrimary;
   }
 }
 
@@ -74,17 +69,17 @@ export function InfoBar({ meta, messages, sessionTotals, sessionPath, ongoing }:
       borderLeft={false}
       borderRight={false}
       borderTop={false}
-      borderColor="gray"
+      borderColor={colors.border}
     >
       {projectName ? (
-        <Text bold color="cyan">
+        <Text bold color={colors.accent}>
           {projectName}
         </Text>
       ) : null}
 
-      {sessionId ? <Text dimColor>{sessionId.slice(0, 8)}</Text> : null}
+      {sessionId ? <Text color={colors.textDim}>{sessionId.slice(0, 8)}</Text> : null}
 
-      {branch ? <Text color="magenta">{branch}</Text> : null}
+      {branch ? <Text color={colors.gitBranch}>{branch}</Text> : null}
 
       {mode && mode !== "default" ? (
         <Text color={modeColor(mode)} bold>
@@ -92,18 +87,18 @@ export function InfoBar({ meta, messages, sessionTotals, sessionPath, ongoing }:
         </Text>
       ) : null}
 
-      {ctxPct >= 0 ? <Text color={contextColor(ctxPct)}>ctx {ctxPct}%</Text> : null}
+      {ctxPct >= 0 ? <Text color={getContextColor(ctxPct)}>ctx {ctxPct}%</Text> : null}
 
       {sessionTotals.total_tokens > 0 ? (
-        <Text dimColor>{formatTokens(sessionTotals.total_tokens)} tok</Text>
+        <Text color={colors.textDim}>{formatTokens(sessionTotals.total_tokens)} tok</Text>
       ) : null}
 
       {sessionTotals.cost_usd > 0 ? (
-        <Text color="yellow">{formatCost(sessionTotals.cost_usd)}</Text>
+        <Text color={colors.tokenHigh}>{formatCost(sessionTotals.cost_usd)}</Text>
       ) : null}
 
       {ongoing ? (
-        <Text color="green" bold>
+        <Text color={colors.ongoing} bold>
           ● active
         </Text>
       ) : null}

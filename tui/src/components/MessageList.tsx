@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import type { DisplayMessage } from "../api.js";
 import { truncate, roleColor, roleIcon, shortModel, modelColor, firstLine } from "../lib/format.js";
+import { colors, getRoleBorderColor, getItemColor } from "../lib/theme.js";
 import { StatsBar, statsFromMessage } from "./StatsBar.js";
 
 interface MessageListProps {
@@ -8,21 +9,6 @@ interface MessageListProps {
   selectedIndex: number;
   expandedSet: Set<number>;
   ongoing: boolean;
-}
-
-/** Left border color for message role — matches web's border-left indicator */
-function roleBorderColor(role: string, isError: boolean): string {
-  if (isError) return "red";
-  switch (role) {
-    case "user":
-      return "blue";
-    case "claude":
-      return "gray";
-    case "system":
-      return "yellow";
-    default:
-      return "gray";
-  }
 }
 
 export function MessageList({ messages, selectedIndex, expandedSet, ongoing }: MessageListProps) {
@@ -66,7 +52,7 @@ export function MessageList({ messages, selectedIndex, expandedSet, ongoing }: M
         const contentPreview = isExpanded
           ? msg.content
           : truncate(firstLine(msg.content), contentWidth);
-        const borderClr = isSelected ? "blue" : roleBorderColor(msg.role, msg.is_error);
+        const borderClr = isSelected ? colors.accent : getRoleBorderColor(msg.role, msg.is_error);
 
         return (
           <Box
@@ -83,7 +69,11 @@ export function MessageList({ messages, selectedIndex, expandedSet, ongoing }: M
           >
             {/* Header: selection indicator + role icon + name + model + badges */}
             <Box gap={1}>
-              <Text bold inverse={isSelected} color={isSelected ? "blue" : roleColor(msg.role)}>
+              <Text
+                bold
+                inverse={isSelected}
+                color={isSelected ? colors.accent : roleColor(msg.role)}
+              >
                 {isSelected ? "▸ " : "  "}
                 {roleIcon(msg.role)}{" "}
                 {msg.role === "claude" ? "Claude" : msg.role === "user" ? "User" : "System"}
@@ -94,12 +84,12 @@ export function MessageList({ messages, selectedIndex, expandedSet, ongoing }: M
                 </Text>
               ) : null}
               {msg.subagent_label ? (
-                <Text color="cyan" dimColor>
+                <Text color={colors.itemAgent} dimColor>
                   [{msg.subagent_label}]
                 </Text>
               ) : null}
               {isLast && ongoing ? (
-                <Text color="green" bold>
+                <Text color={colors.ongoing} bold>
                   ● active
                 </Text>
               ) : null}
@@ -127,7 +117,7 @@ export function MessageList({ messages, selectedIndex, expandedSet, ongoing }: M
                   <Box
                     key={`${item.item_type}-${item.tool_name || ""}-${item.text.slice(0, 20)}`}
                     borderStyle="single"
-                    borderColor="gray"
+                    borderColor={colors.border}
                     borderLeft
                     borderRight={false}
                     borderTop={false}
@@ -135,18 +125,22 @@ export function MessageList({ messages, selectedIndex, expandedSet, ongoing }: M
                     paddingLeft={1}
                   >
                     {item.item_type === "ToolCall" ? (
-                      <Text color={item.tool_error ? "red" : "blue"}>
+                      <Text color={getItemColor("ToolCall", !!item.tool_error)}>
                         ⚙ {item.tool_name}
                         {item.tool_summary
                           ? ` — ${truncate(item.tool_summary, contentWidth - 20)}`
                           : ""}
                       </Text>
                     ) : item.item_type === "Thinking" ? (
-                      <Text color="gray">💭 {truncate(item.text, contentWidth - 10)}</Text>
+                      <Text color={colors.itemThinking}>
+                        💭 {truncate(item.text, contentWidth - 10)}
+                      </Text>
                     ) : item.item_type === "Output" ? (
-                      <Text>✎ {truncate(item.text, contentWidth - 10)}</Text>
+                      <Text color={colors.itemOutput}>
+                        ✎ {truncate(item.text, contentWidth - 10)}
+                      </Text>
                     ) : item.item_type === "Subagent" ? (
-                      <Text color="cyan">
+                      <Text color={colors.itemAgent}>
                         🤖 {item.subagent_type || "Agent"}
                         {item.subagent_desc
                           ? ` — ${truncate(item.subagent_desc, contentWidth - 20)}`
@@ -154,16 +148,16 @@ export function MessageList({ messages, selectedIndex, expandedSet, ongoing }: M
                         {item.subagent_ongoing ? " ●" : ""}
                       </Text>
                     ) : item.item_type === "TeammateMessage" ? (
-                      <Text color="blue">
+                      <Text color={colors.itemTeammate}>
                         👥 {item.team_member_name || "Teammate"}:{" "}
                         {truncate(item.text, contentWidth - 20)}
                       </Text>
                     ) : item.item_type === "HookEvent" ? (
-                      <Text color="yellow">
+                      <Text color={colors.itemHook}>
                         ⚡ {item.hook_event}: {item.hook_name}
                       </Text>
                     ) : (
-                      <Text color="gray">
+                      <Text color={colors.textDim}>
                         {item.item_type}: {truncate(item.text, contentWidth - 20)}
                       </Text>
                     )}

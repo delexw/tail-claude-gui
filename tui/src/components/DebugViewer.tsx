@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import type { DebugEntry } from "../api.js";
 import { truncate } from "../lib/format.js";
+import { colors } from "../lib/theme.js";
 
 interface DebugViewerProps {
   entries: DebugEntry[];
@@ -10,15 +11,15 @@ interface DebugViewerProps {
 function levelColor(level: string): string {
   switch (level.toLowerCase()) {
     case "error":
-      return "red";
+      return colors.error;
     case "warn":
-      return "yellow";
+      return colors.tokenHigh;
     case "info":
-      return "blue";
+      return colors.accent;
     case "debug":
-      return "gray";
+      return colors.textDim;
     default:
-      return "white";
+      return colors.textPrimary;
   }
 }
 
@@ -59,9 +60,9 @@ export function DebugViewer({ entries, selectedIndex }: DebugViewerProps) {
             <Text color={levelColor(entry.level)} bold>
               {entry.level.toUpperCase().padEnd(5)}{" "}
             </Text>
-            {entry.category ? <Text color="cyan">[{entry.category}] </Text> : null}
+            {entry.category ? <Text color={colors.itemAgent}>[{entry.category}] </Text> : null}
             <Text dimColor={!isSelected}>{truncate(entry.message, cols - 30)}</Text>
-            {entry.count > 1 ? <Text color="yellow"> x{entry.count}</Text> : null}
+            {entry.count > 1 ? <Text color={colors.tokenHigh}> x{entry.count}</Text> : null}
           </Box>
         );
       })}

@@ -1,4 +1,5 @@
 import { Box, Text } from "ink";
+import { colors } from "../lib/theme.js";
 
 type ViewState = "picker" | "list" | "detail" | "team" | "debug";
 
@@ -74,11 +75,11 @@ export function KeybindBar({ view, hasTeams, position }: KeybindBarProps) {
       borderLeft={false}
       borderRight={false}
       borderBottom={false}
-      borderColor="gray"
+      borderColor={colors.border}
     >
       {keys.map((hint) => (
         <Box key={hint.key} gap={0}>
-          <Text bold color="blue">
+          <Text bold color={colors.accent}>
             {hint.key}
           </Text>
           <Text dimColor> {hint.label}</Text>

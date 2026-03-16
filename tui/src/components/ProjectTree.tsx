@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Box, Text } from "ink";
 import type { SessionInfo } from "../api.js";
+import { colors } from "../lib/theme.js";
 
 interface ProjectTreeProps {
   sessions: SessionInfo[];
@@ -72,7 +73,7 @@ export function ProjectTree({
     <Box
       flexDirection="column"
       borderStyle="single"
-      borderColor={isFocused ? "blue" : "gray"}
+      borderColor={isFocused ? colors.accent : colors.border}
       width={24}
     >
       {/* Header */}
@@ -90,12 +91,16 @@ export function ProjectTree({
 
         return (
           <Box key={entry.key ?? "all"} paddingX={1}>
-            <Text inverse={isHighlighted} bold={isSelected} color={isSelected ? "blue" : undefined}>
+            <Text
+              inverse={isHighlighted}
+              bold={isSelected}
+              color={isSelected ? colors.accent : undefined}
+            >
               {isSelected ? "▸" : " "} {entry.name}
             </Text>
             <Text dimColor> {entry.count}</Text>
             {entry.ongoingCount > 0 ? (
-              <Text color="green" bold>
+              <Text color={colors.ongoing} bold>
                 {" "}
                 ●
               </Text>

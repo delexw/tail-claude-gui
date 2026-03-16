@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { shortModel, modelColor, roleColor, roleIcon, firstLine, formatJson } from "./format";
+import { colors } from "./theme";
 
 describe("shortModel", () => {
   it("strips claude- prefix and formats version", () => {
@@ -18,29 +19,29 @@ describe("shortModel", () => {
 });
 
 describe("modelColor", () => {
-  it("returns red for opus", () => {
-    expect(modelColor("claude-opus-4-6")).toBe("red");
+  it("returns modelOpus hex for opus", () => {
+    expect(modelColor("claude-opus-4-6")).toBe(colors.modelOpus);
   });
 
-  it("returns blue for sonnet", () => {
-    expect(modelColor("claude-sonnet-4-6")).toBe("blue");
+  it("returns modelSonnet hex for sonnet", () => {
+    expect(modelColor("claude-sonnet-4-6")).toBe(colors.modelSonnet);
   });
 
-  it("returns green for haiku", () => {
-    expect(modelColor("claude-haiku-4-5")).toBe("green");
+  it("returns modelHaiku hex for haiku", () => {
+    expect(modelColor("claude-haiku-4-5")).toBe(colors.modelHaiku);
   });
 
-  it("returns white for unknown", () => {
-    expect(modelColor("gpt-4")).toBe("white");
+  it("returns textSecondary hex for unknown", () => {
+    expect(modelColor("gpt-4")).toBe(colors.textSecondary);
   });
 });
 
 describe("roleColor", () => {
-  it("returns correct colors", () => {
-    expect(roleColor("claude")).toBe("magenta");
-    expect(roleColor("user")).toBe("green");
-    expect(roleColor("system")).toBe("yellow");
-    expect(roleColor("other")).toBe("white");
+  it("returns correct hex colors", () => {
+    expect(roleColor("claude")).toBe(colors.textSecondary);
+    expect(roleColor("user")).toBe(colors.accent);
+    expect(roleColor("system")).toBe(colors.textMuted);
+    expect(roleColor("other")).toBe(colors.textPrimary);
   });
 });
 

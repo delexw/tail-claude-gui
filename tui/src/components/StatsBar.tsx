@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import type { DisplayMessage } from "../api.js";
 import { formatTokens, formatDuration } from "../lib/format.js";
+import { colors } from "../lib/theme.js";
 
 export interface Stats {
   tokens: number;
@@ -45,24 +46,24 @@ export function StatsBar({ stats }: { stats: Stats }) {
   return (
     <Box gap={1}>
       {stats.tokens > 0 && (
-        <Text dimColor color={stats.tokens > 150000 ? "yellow" : undefined}>
+        <Text dimColor color={stats.tokens > 150000 ? colors.tokenHigh : undefined}>
           {formatTokens(stats.tokens)} tok
         </Text>
       )}
       {stats.toolCount > 0 && (
-        <Text dimColor color="blue">
+        <Text dimColor color={colors.itemTool}>
           ⚙{stats.toolCount}
         </Text>
       )}
       {stats.thinkingCount > 0 && (
-        <Text dimColor color="gray">
+        <Text dimColor color={colors.itemThinking}>
           💭{stats.thinkingCount}
         </Text>
       )}
       {stats.outputCount > 0 && <Text dimColor>✎{stats.outputCount}</Text>}
       {stats.durationMs > 0 && <Text dimColor>{formatDuration(stats.durationMs)}</Text>}
       {stats.agentCount > 0 && (
-        <Text dimColor color="cyan">
+        <Text dimColor color={colors.itemAgent}>
           🤖{stats.agentCount}
         </Text>
       )}

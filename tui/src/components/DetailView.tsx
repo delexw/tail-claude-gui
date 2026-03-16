@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import type { DisplayMessage, DisplayItem } from "../api.js";
 import { formatDuration, truncate, roleColor, roleIcon, formatJson } from "../lib/format.js";
+import { colors, getItemColor } from "../lib/theme.js";
 import { StatsBar, statsFromMessage } from "./StatsBar.js";
 
 interface DetailViewProps {
@@ -74,42 +75,12 @@ function getItemSummary(item: DisplayItem): string {
 }
 
 function itemBorderColor(item: DisplayItem, isSelected: boolean): string {
-  if (isSelected) return "blue";
-  switch (item.item_type) {
-    case "Thinking":
-      return "gray";
-    case "Output":
-      return "white";
-    case "ToolCall":
-      return item.tool_error ? "red" : "blue";
-    case "Subagent":
-      return "cyan";
-    case "TeammateMessage":
-      return "blue";
-    case "HookEvent":
-      return "yellow";
-    default:
-      return "gray";
-  }
+  if (isSelected) return colors.accent;
+  return getItemColor(item.item_type, !!item.tool_error);
 }
 
 function itemColor(item: DisplayItem): string {
-  switch (item.item_type) {
-    case "Thinking":
-      return "gray";
-    case "Output":
-      return "white";
-    case "ToolCall":
-      return item.tool_error ? "red" : "blue";
-    case "Subagent":
-      return "cyan";
-    case "TeammateMessage":
-      return "blue";
-    case "HookEvent":
-      return "yellow";
-    default:
-      return "gray";
-  }
+  return getItemColor(item.item_type, !!item.tool_error);
 }
 
 export function DetailView({ message, selectedItem, expandedItems, ongoing }: DetailViewProps) {
@@ -132,7 +103,7 @@ export function DetailView({ message, selectedItem, expandedItems, ongoing }: De
       <Box
         flexDirection="column"
         borderStyle="single"
-        borderColor="gray"
+        borderColor={colors.border}
         borderLeft={false}
         borderRight={false}
         borderTop={false}
@@ -143,10 +114,12 @@ export function DetailView({ message, selectedItem, expandedItems, ongoing }: De
             {roleIcon(message.role)}{" "}
             {message.role === "claude" ? "Claude" : message.role === "user" ? "User" : "System"}
           </Text>
-          {message.subagent_label ? <Text color="cyan">[{message.subagent_label}]</Text> : null}
+          {message.subagent_label ? (
+            <Text color={colors.itemAgent}>[{message.subagent_label}]</Text>
+          ) : null}
           <StatsBar stats={stats} />
           {ongoing ? (
-            <Text color="green" bold>
+            <Text color={colors.ongoing} bold>
               ● active
             </Text>
           ) : null}
@@ -191,7 +164,7 @@ export function DetailView({ message, selectedItem, expandedItems, ongoing }: De
                     <Text dimColor>{formatDuration(item.duration_ms)}</Text>
                   ) : null}
                   {item.subagent_ongoing ? (
-                    <Text color="green" bold>
+                    <Text color={colors.ongoing} bold>
                       ●
                     </Text>
                   ) : null}
@@ -216,7 +189,7 @@ function DetailItemBody({ item, cols }: { item: DisplayItem; cols: number }) {
     case "Thinking":
       return (
         <Box paddingX={1} flexDirection="column">
-          <Text color="gray" wrap="wrap">
+          <Text color={colors.itemThinking} wrap="wrap">
             {item.text || "Thinking content is not recorded in session logs."}
           </Text>
         </Box>
@@ -245,7 +218,7 @@ function DetailItemBody({ item, cols }: { item: DisplayItem; cols: number }) {
               <Text bold dimColor>
                 RESULT
               </Text>
-              <Text color={item.tool_error ? "red" : undefined} wrap="wrap">
+              <Text color={item.tool_error ? colors.error : undefined} wrap="wrap">
                 {truncate(item.tool_result, maxWidth * 5)}
               </Text>
             </Box>

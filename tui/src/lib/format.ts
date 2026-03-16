@@ -8,6 +8,8 @@ export {
   timeAgo,
 } from "../../../shared/format.js";
 
+import { colors, getModelColor as _getModelColor } from "./theme.js";
+
 /** Turns "claude-opus-4-6" into "opus4.6". */
 export function shortModel(m: string): string {
   const s = m.replace(/^claude-/, "");
@@ -23,25 +25,22 @@ export function shortModel(m: string): string {
   return family + version;
 }
 
-/** Returns an Ink-compatible color name for a model string. */
+/** Returns hex color for a model string (matches web theme). */
 export function modelColor(m: string): string {
-  if (m.includes("opus")) return "red";
-  if (m.includes("sonnet")) return "blue";
-  if (m.includes("haiku")) return "green";
-  return "white";
+  return _getModelColor(m);
 }
 
-/** Returns an Ink-compatible color name for a message role. */
+/** Returns hex color for a message role (matches web theme). */
 export function roleColor(role: string): string {
   switch (role) {
     case "claude":
-      return "magenta";
+      return colors.textSecondary;
     case "user":
-      return "green";
+      return colors.accent;
     case "system":
-      return "yellow";
+      return colors.textMuted;
     default:
-      return "white";
+      return colors.textPrimary;
   }
 }
 

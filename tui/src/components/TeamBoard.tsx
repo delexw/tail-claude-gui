@@ -1,5 +1,6 @@
 import { Box, Text } from "ink";
 import type { TeamSnapshot } from "../api.js";
+import { colors, getTeamColor } from "../lib/theme.js";
 
 interface TeamBoardProps {
   teams: TeamSnapshot[];
@@ -23,30 +24,20 @@ function statusIcon(status: string): string {
 function statusColor(status: string): string {
   switch (status.toLowerCase()) {
     case "completed":
-      return "green";
+      return colors.ongoing;
     case "in_progress":
-      return "yellow";
+      return colors.tokenHigh;
     case "pending":
-      return "white";
+      return colors.textPrimary;
     case "cancelled":
-      return "red";
+      return colors.error;
     default:
-      return "white";
+      return colors.textPrimary;
   }
 }
 
 function memberColor(color: string): string {
-  const map: Record<string, string> = {
-    blue: "blue",
-    green: "green",
-    red: "red",
-    yellow: "yellow",
-    purple: "magenta",
-    cyan: "cyan",
-    orange: "yellow",
-    pink: "magenta",
-  };
-  return map[color.toLowerCase()] ?? "white";
+  return getTeamColor(color);
 }
 
 export function TeamBoard({ teams }: TeamBoardProps) {
@@ -70,7 +61,7 @@ export function TeamBoard({ teams }: TeamBoardProps) {
           <Box key={team.name} flexDirection="column" marginBottom={1}>
             {/* Team header */}
             <Box gap={1}>
-              <Text bold color="cyan">
+              <Text bold color={colors.itemAgent}>
                 {team.name}
               </Text>
               {team.description ? <Text dimColor>— {team.description}</Text> : null}
@@ -86,7 +77,7 @@ export function TeamBoard({ teams }: TeamBoardProps) {
                   <Box key={m} gap={0}>
                     <Text color={memberColor(clr)}>{m}</Text>
                     {isOngoing ? (
-                      <Text color="green" bold>
+                      <Text color={colors.ongoing} bold>
                         ●
                       </Text>
                     ) : null}
