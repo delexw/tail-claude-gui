@@ -78,7 +78,7 @@ export function DetailView({
   const maxNameLen = Math.min(24, Math.max(12, ...items.map((it) => getItemName(it).length)));
 
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" paddingX={1}>
       {/* Message header — round border (matches Go TUI's RoundedBorder) */}
       <Box flexDirection="column" borderStyle="round" borderColor={colors.border} paddingX={2}>
         <Box gap={1}>
@@ -95,7 +95,7 @@ export function DetailView({
         </Box>
         {items.length > 0 ? (
           <Text dimColor wrap="truncate">
-            {truncate(message.content, contentWidth - 8)}
+            {truncate(message.content, contentWidth - 10)}
           </Text>
         ) : null}
       </Box>
