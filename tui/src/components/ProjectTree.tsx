@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Box, Text } from "ink";
 import type { SessionInfo } from "../api.js";
 import { colors } from "../lib/theme.js";
+import { OngoingDots } from "./OngoingDots.js";
 
 interface ProjectTreeProps {
   sessions: SessionInfo[];
@@ -99,12 +100,7 @@ export function ProjectTree({
               {isSelected ? "▸" : " "} {entry.name}
             </Text>
             <Text dimColor> {entry.count}</Text>
-            {entry.ongoingCount > 0 ? (
-              <Text color={colors.ongoing} bold>
-                {" "}
-                ●
-              </Text>
-            ) : null}
+            {entry.ongoingCount > 0 ? <OngoingDots count={1} /> : null}
           </Box>
         );
       })}

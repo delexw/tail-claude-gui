@@ -3,6 +3,7 @@ import type { DisplayMessage, DisplayItem } from "../api.js";
 import { formatDuration, truncate, roleColor, roleIcon, formatJson } from "../lib/format.js";
 import { colors, getItemColor } from "../lib/theme.js";
 import { StatsBar, statsFromMessage } from "./StatsBar.js";
+import { OngoingDots } from "./OngoingDots.js";
 
 interface DetailViewProps {
   message: DisplayMessage;
@@ -114,11 +115,7 @@ export function DetailView({ message, selectedItem, expandedItems, ongoing }: De
             <Text color={colors.itemAgent}>[{message.subagent_label}]</Text>
           ) : null}
           <StatsBar stats={stats} />
-          {ongoing ? (
-            <Text color={colors.ongoing} bold>
-              ● active
-            </Text>
-          ) : null}
+          {ongoing ? <OngoingDots /> : null}
         </Box>
         {items.length > 0 ? (
           <Text dimColor wrap="truncate">
@@ -156,11 +153,7 @@ export function DetailView({ message, selectedItem, expandedItems, ongoing }: De
                     {item.duration_ms > 0 ? (
                       <Text dimColor>{formatDuration(item.duration_ms)}</Text>
                     ) : null}
-                    {item.subagent_ongoing ? (
-                      <Text color={colors.ongoing} bold>
-                        ●
-                      </Text>
-                    ) : null}
+                    {item.subagent_ongoing ? <OngoingDots count={3} /> : null}
                     {item.agent_id ? <Text dimColor>[{item.agent_id.slice(0, 8)}]</Text> : null}
                   </Box>
 
