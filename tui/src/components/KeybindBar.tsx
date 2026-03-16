@@ -69,24 +69,21 @@ export function KeybindBar({ view, hasTeams, position }: KeybindBarProps) {
   const keys = getKeys(view, hasTeams);
 
   return (
-    <Box
-      paddingX={1}
-      gap={1}
-      borderStyle="single"
-      borderLeft={false}
-      borderRight={false}
-      borderBottom={false}
-      borderColor={colors.border}
-    >
+    <Box paddingX={1} borderStyle="round" borderColor={colors.border}>
+      {/* "tail" prefix — matches Go TUI keybind bar */}
+      <Text color={colors.textDim}>tail</Text>
       {keys.map((hint) => (
         <Box key={hint.key} gap={0}>
+          <Text color={colors.textMuted}> · </Text>
           <Text bold color={colors.accent}>
             {hint.key}
           </Text>
           <Text dimColor> {hint.label}</Text>
         </Box>
       ))}
-      {position ? <Text dimColor> {position}</Text> : null}
+      {/* Spacer pushes position to the right */}
+      <Box flexGrow={1} />
+      {position ? <Text dimColor>{position}</Text> : null}
     </Box>
   );
 }
