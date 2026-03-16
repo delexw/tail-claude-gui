@@ -20,11 +20,13 @@ echo "==> Building TUI..."
 cd tui
 npm install
 npm run build
-npm link
 cd ..
+
+echo "==> Linking cctrace CLI..."
+npm link
 
 echo ""
 echo "Installed! Run:"
-echo "  claude-code-trace        # desktop app"
-echo "  claude-code-trace --web  # web mode (opens browser)"
-echo "  cctrace-tui              # terminal UI (requires backend running)"
+echo "  cctrace          # desktop app (default)"
+echo "  cctrace --web    # web mode (opens browser)"
+echo "  cctrace --tui    # terminal UI"

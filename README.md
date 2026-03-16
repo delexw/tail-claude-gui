@@ -14,16 +14,16 @@ Reads session logs from `~/.claude/` and renders them as a scrollable conversati
 
 ## Install
 
-### cargo install (any platform with Rust + Node.js)
+### Build from source (any platform with Rust + Node.js)
 
 ```bash
 git clone git@github.com:delexw/claude-code-trace.git
 cd claude-code-trace
 ./script/install.sh       # builds everything + installs to PATH
 
-claude-code-trace          # desktop app
-claude-code-trace --web    # web mode (opens browser)
-cctrace-tui                # terminal UI (requires backend running)
+cctrace              # desktop app (default)
+cctrace --web        # web mode (opens browser)
+cctrace --tui        # terminal UI
 ```
 
 ### Download pre-built
@@ -49,7 +49,10 @@ Grab the latest release from [Releases](https://github.com/delexw/claude-code-tr
 git clone git@github.com:delexw/claude-code-trace.git
 cd claude-code-trace
 npm install
-npm run tauri dev -- -- --web   # opens browser automatically
+
+npm run tauri dev        # desktop app with hot reload
+npm run dev:web          # web mode (opens browser)
+npm run dev:tui          # TUI (starts backend + terminal UI)
 ```
 
 ## Requirements
@@ -62,32 +65,22 @@ npm run tauri dev -- -- --web   # opens browser automatically
 
 ## Usage
 
-### Desktop
+```bash
+cctrace              # desktop app (default)
+cctrace --web        # web mode (opens browser at http://localhost:1420)
+cctrace --tui        # terminal UI (starts backend + TUI together)
+```
 
-Launch the app to open the session picker. It auto-discovers all sessions from `~/.claude/projects/`.
+Launch to open the session picker. It auto-discovers all sessions from `~/.claude/projects/`.
 
-Click **Open in Browser** in the toolbar to switch to browser mode — this opens `http://localhost:1420` in your default browser and hides the desktop window.
+In desktop mode, click **Open in Browser** in the toolbar to switch to browser mode — this opens `http://localhost:1420` in your default browser and hides the desktop window.
 
-### Web (standalone)
-
-If you installed the desktop app:
+If you installed the pre-built `.dmg`/`.deb`/`.msi`, you can also launch the desktop app directly and pass `--web` to the binary:
 
 ```bash
 # macOS
 /Applications/Claude\ Code\ Trace.app/Contents/MacOS/Claude\ Code\ Trace --web
-
-# Or add a shell alias:
-alias cctrace='/Applications/Claude\ Code\ Trace.app/Contents/MacOS/Claude\ Code\ Trace --web'
-cctrace
 ```
-
-If running from source:
-
-```bash
-npm run tauri dev -- -- --web
-```
-
-Then open **http://localhost:1420** in any browser.
 
 Select a session to view the conversation. Click messages to expand tool calls, or open the detail view for full inspection.
 
@@ -112,9 +105,13 @@ MCP (Model Context Protocol) tool calls are automatically detected and displayed
 
 **Detail view**
 
-| Key         | Action       |
-| ----------- | ------------ |
-| `q` / `Esc` | Back to list |
+| Key         | Action                         |
+| ----------- | ------------------------------ |
+| `j` / `k`   | Navigate items                 |
+| `Tab`       | Toggle expand/collapse item    |
+| `Enter`     | Open subagent or toggle expand |
+| `h` / `l`   | Switch panels left / right     |
+| `q` / `Esc` | Back to list                   |
 
 **Session picker**
 
@@ -129,24 +126,6 @@ MCP (Model Context Protocol) tool calls are automatically detected and displayed
 | Key         | Action       |
 | ----------- | ------------ |
 | `q` / `Esc` | Back to list |
-
-## TUI (Terminal UI)
-
-A terminal-based viewer that connects to the same HTTP API. No browser needed — just Node.js + a terminal.
-
-```bash
-# First time setup
-cd tui && npm install && cd ..
-
-# Single command (starts backend + TUI together):
-npm run dev:tui
-
-# Or if you installed via script/install.sh:
-claude-code-trace --web &   # start backend in background
-cctrace-tui                 # run TUI
-```
-
-Features: session picker, message list with expand/collapse, live tailing via SSE, vim-style keybinds (j/k/G/g/Tab/e/c/q).
 
 ## Development
 
