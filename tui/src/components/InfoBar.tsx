@@ -120,10 +120,9 @@ export function InfoBar({ meta, messages, sessionTotals, sessionPath, ongoing }:
           </>
         ) : null}
         {ongoing ? (
-          <>
-            {" "}
+          <Box marginLeft={1}>
             <BrailleSpinner />
-          </>
+          </Box>
         ) : null}
       </Box>
     </Box>
