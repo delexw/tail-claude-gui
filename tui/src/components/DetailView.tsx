@@ -130,13 +130,16 @@ export function DetailView({
                   {/* Item header row — Go TUI aligned format */}
                   <Box>
                     {/* Cursor + icon + name (fixed width) */}
-                    <Text bold={isSelected} inverse={isSelected} color={accentClr}>
+                    <Text bold={isSelected} color={isSelected ? colors.accent : accentClr}>
                       {isExpanded ? IconExpanded : IconCollapsed} {getItemIcon(item)}{" "}
                       {getItemName(item).padEnd(maxNameLen)}
                     </Text>
-                    {/* Summary — "- " separator matches Go TUI */}
+                    {/* Summary — em dash separator matches MessageList */}
                     {getItemSummary(item) ? (
-                      <Text dimColor> - {truncate(getItemSummary(item), summaryMaxLen)}</Text>
+                      <Text dimColor wrap="truncate">
+                        {" "}
+                        {"\u2014"} {truncate(getItemSummary(item), summaryMaxLen)}
+                      </Text>
                     ) : null}
                     {/* Spacer */}
                     <Box flexGrow={1} />

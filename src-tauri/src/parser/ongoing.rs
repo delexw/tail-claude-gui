@@ -101,6 +101,11 @@ impl ActivityLog {
             has_items = true;
 
             for item in &chunk.items {
+                // Orphan items are synthetic placeholders — skip them
+                // so they don't make the session look ongoing.
+                if item.is_orphan {
+                    continue;
+                }
                 match item.item_type {
                     DisplayItemType::Thinking => {
                         entries.push((ActivityType::Thinking, idx));
@@ -224,6 +229,11 @@ impl<'a> OngoingChecker<'a> {
 
     /// Check if a subagent process is ongoing (chunk-based + background commands + file staleness).
     pub fn is_subagent_ongoing(proc: &super::subagent::SubagentProcess) -> bool {
+        // A <synthetic> end marker in the JSONL means the subagent is
+        // definitively finished, regardless of what the chunks look like.
+        if proc.has_end_marker {
+            return false;
+        }
         (Self::is_chunks_ongoing(&proc.chunks)
             || Self::has_pending_background_commands(&proc.chunks))
             && apply_staleness(true, proc.file_mod_time)
@@ -313,6 +323,11 @@ impl<'a> OngoingChecker<'a> {
                 continue;
             }
             for item in &chunk.items {
+                // Orphan items are synthetic placeholders — they never
+                // represent pending work, so skip them.
+                if item.is_orphan {
+                    continue;
+                }
                 match item.item_type {
                     DisplayItemType::Subagent => {
                         if item.tool_result.is_empty() {
@@ -975,6 +990,20 @@ mod tests {
             ..Default::default()
         });
         assert!(OngoingChecker::is_chunks_ongoing(&[ai1, ai2]));
+    }
+
+    #[test]
+    fn orphan_subagent_does_not_look_ongoing() {
+        let mut chunk = make_chunk(ChunkType::AI);
+        chunk.items.push(DisplayItem {
+            item_type: DisplayItemType::Subagent,
+            tool_name: "Agent".to_string(),
+            tool_result: String::new(),
+            is_orphan: true,
+            ..Default::default()
+        });
+        // Orphan items should be invisible to the ongoing check.
+        assert!(!OngoingChecker::is_chunks_ongoing(&[chunk]));
     }
 
     // --- has_pending_background_commands tests ---

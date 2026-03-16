@@ -168,6 +168,9 @@ pub struct SubagentProcess {
     pub team_summary: String,
     pub teammate_color: String,
     pub prompt: String,
+    /// True when the JSONL contains a `<synthetic>` end marker, meaning the
+    /// subagent has definitively finished regardless of what the chunks look like.
+    pub has_end_marker: bool,
 }
 
 impl Default for SubagentProcess {
@@ -187,6 +190,7 @@ impl Default for SubagentProcess {
             team_summary: String::new(),
             teammate_color: String::new(),
             prompt: String::new(),
+            has_end_marker: false,
         }
     }
 }
@@ -245,8 +249,8 @@ pub fn discover_subagents(session_path: &str) -> Result<Vec<SubagentProcess>, St
             continue;
         }
 
-        let (chunks, team_summary, team_color) = read_subagent_session(&file_path)?;
-        if chunks.is_empty() {
+        let session_data = read_subagent_session(&file_path)?;
+        if session_data.chunks.is_empty() {
             continue;
         }
 
@@ -256,15 +260,17 @@ pub fn discover_subagents(session_path: &str) -> Result<Vec<SubagentProcess>, St
             .to_string();
         let subagent_type = read_agent_type(&meta_path);
 
-        procs.push(build_subagent_process(
+        let mut proc = build_subagent_process(
             agent_id,
             file_path,
             &metadata,
-            chunks,
+            session_data.chunks,
             subagent_type,
-            team_summary,
-            team_color,
-        ));
+            session_data.team_summary,
+            session_data.team_color,
+        );
+        proc.has_end_marker = session_data.has_end_marker;
+        procs.push(proc);
     }
 
     procs.sort_by(|a, b| a.start_time.cmp(&b.start_time));
@@ -359,7 +365,16 @@ fn is_warmup_agent(path: &str) -> bool {
     false
 }
 
-fn read_subagent_session(path: &str) -> Result<(Vec<Chunk>, String, String), String> {
+/// Parsed subagent session data.
+struct SubagentSessionData {
+    chunks: Vec<Chunk>,
+    team_summary: String,
+    team_color: String,
+    /// True when the JSONL contains a `<synthetic>` assistant end marker.
+    has_end_marker: bool,
+}
+
+fn read_subagent_session(path: &str) -> Result<SubagentSessionData, String> {
     use super::patterns::{TEAMMATE_COLOR_RE, TEAMMATE_SUMMARY_RE};
 
     let f = fs::File::open(path).map_err(|e| format!("opening {path}: {e}"))?;
@@ -369,6 +384,7 @@ fn read_subagent_session(path: &str) -> Result<(Vec<Chunk>, String, String), Str
     let mut team_summary = String::new();
     let mut team_color = String::new();
     let mut extracted_team_meta = false;
+    let mut has_end_marker = false;
 
     for line_result in reader.lines() {
         let line = match line_result {
@@ -380,6 +396,13 @@ fn read_subagent_session(path: &str) -> Result<(Vec<Chunk>, String, String), Str
             Some(e) => e,
             None => continue,
         };
+
+        // Detect <synthetic> assistant end marker — signals the subagent
+        // has definitively finished. classify() filters these out, so we
+        // detect them here before classification.
+        if entry.entry_type == "assistant" && entry.message.model == "<synthetic>" {
+            has_end_marker = true;
+        }
 
         // Extract team metadata from first user entry.
         if !extracted_team_meta && entry.entry_type == "user" {
@@ -403,7 +426,12 @@ fn read_subagent_session(path: &str) -> Result<(Vec<Chunk>, String, String), Str
         }
     }
 
-    Ok((build_chunks(&msgs), team_summary, team_color))
+    Ok(SubagentSessionData {
+        chunks: build_chunks(&msgs),
+        team_summary,
+        team_color,
+        has_end_marker,
+    })
 }
 
 fn chunk_timing(chunks: &[Chunk]) -> (DateTime<Utc>, DateTime<Utc>, i64) {
@@ -906,20 +934,22 @@ pub fn discover_team_sessions(
             continue;
         }
 
-        let (chunks, _, team_color) = read_subagent_session(&file_path)?;
-        if chunks.is_empty() {
+        let session_data = read_subagent_session(&file_path)?;
+        if session_data.chunks.is_empty() {
             continue;
         }
 
-        procs.push(build_subagent_process(
+        let mut proc = build_subagent_process(
             format!("{agent_name}@{team_name}"),
             file_path,
             &metadata,
-            chunks,
+            session_data.chunks,
             String::new(),
             String::new(),
-            team_color,
-        ));
+            session_data.team_color,
+        );
+        proc.has_end_marker = session_data.has_end_marker;
+        procs.push(proc);
     }
 
     procs.sort_by(|a, b| a.start_time.cmp(&b.start_time));
