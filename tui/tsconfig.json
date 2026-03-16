@@ -1,15 +1,12 @@
 {
+  "extends": "../tsconfig.json",
   "compilerOptions": {
-    "target": "ES2022",
+    "noEmit": false,
+    "outDir": "dist",
+    "declaration": true,
     "module": "Node16",
     "moduleResolution": "Node16",
-    "jsx": "react-jsx",
-    "outDir": "dist",
-    "rootDir": "..",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "declaration": true
+    "allowImportingTsExtensions": false
   },
   "include": ["src", "../shared"]
 }
