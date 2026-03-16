@@ -69,7 +69,7 @@ export function InfoBar({ meta, messages, sessionTotals, sessionPath, ongoing }:
   const ctxPct = useMemo(() => contextPercent(messages), [messages]);
 
   return (
-    <Box paddingX={1} borderStyle="round" borderColor={colors.border}>
+    <Box paddingX={2} borderStyle="round" borderColor={colors.border}>
       {/* Left: path · branch · mode — Go TUI layout */}
       <Box>
         {projectName ? (
