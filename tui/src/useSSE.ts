@@ -3,13 +3,34 @@ import { EventSource } from "eventsource";
 
 const API = "http://127.0.0.1:11423";
 
-/** Subscribe to SSE events from the Rust backend. */
+/** Shared SSE connection — lazily created, ref-counted (matches web's listen.ts pattern). */
+let sharedSource: EventSource | null = null;
+let refCount = 0;
+
+function acquireSource(): EventSource {
+  if (!sharedSource || sharedSource.readyState === EventSource.CLOSED) {
+    sharedSource = new EventSource(`${API}/api/events`);
+  }
+  refCount++;
+  return sharedSource;
+}
+
+function releaseSource(): void {
+  refCount--;
+  if (refCount <= 0 && sharedSource) {
+    sharedSource.close();
+    sharedSource = null;
+    refCount = 0;
+  }
+}
+
+/** Subscribe to SSE events from the Rust backend. Shares a single EventSource connection. */
 export function useSSE<T>(event: string, handler: (payload: T) => void) {
   const handlerRef = useRef(handler);
   handlerRef.current = handler;
 
   useEffect(() => {
-    const source = new EventSource(`${API}/api/events`);
+    const source = acquireSource();
     const onMessage = (e: MessageEvent) => {
       try {
         handlerRef.current(JSON.parse(e.data) as T);
@@ -20,7 +41,7 @@ export function useSSE<T>(event: string, handler: (payload: T) => void) {
     source.addEventListener(event, onMessage as EventListener);
     return () => {
       source.removeEventListener(event, onMessage as EventListener);
-      source.close();
+      releaseSource();
     };
   }, [event]);
 }
