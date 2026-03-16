@@ -1,45 +1,54 @@
 /**
- * Theme colors for TUI — mirrors src/lib/theme.ts (web app).
+ * Theme colors for TUI — aligned with tail-claude Bubble Tea theme.
  * Ink supports hex colors in modern terminals.
+ *
+ * Color values map to ANSI-256 equivalents used in the Go TUI:
+ * - Text hierarchy: 252 / 245 / 243 / 240
+ * - Accent: 75 (blue), Border: 60 (muted blue)
+ * - Status: 76 (green), 208 (orange), 196 (red)
  */
 
 export const colors = {
-  // Text hierarchy
+  // Text hierarchy (ANSI 252 / 245 / 243 / 240)
   textPrimary: "#d0d0d0",
   textSecondary: "#8a8a8a",
   textDim: "#767676",
   textMuted: "#585858",
 
-  // Accents
+  // Accents (ANSI 75 / 69 / 196)
   accent: "#5fafff",
+  info: "#5f87ff",
   error: "#ff0000",
 
-  // Borders
+  // Borders (ANSI 60 — muted blue)
   border: "#5f5f87",
 
-  // Model family
+  // Model family (ANSI 204 / 75 / 114)
   modelOpus: "#ff5f87",
   modelSonnet: "#5fafff",
   modelHaiku: "#87d787",
 
-  // Token highlight
+  // Token highlight (ANSI 208)
   tokenHigh: "#ff8700",
 
-  // Ongoing indicator
+  // Ongoing indicator (ANSI 76)
   ongoing: "#5faf00",
 
-  // Context usage
+  // Context usage (ANSI 114 / 208 / 196)
   contextOk: "#87d787",
   contextWarn: "#ff8700",
   contextCrit: "#ff0000",
 
-  // Permission mode pills
+  // Permission mode pills (ANSI 196 / 135 / 114)
   pillBypass: "#ff0000",
   pillAcceptEdits: "#af5fff",
   pillPlan: "#87d787",
 
-  // Git branch
+  // Git branch (ANSI 135)
   gitBranch: "#af5fff",
+
+  // Picker selection background (ANSI 237 — subtle elevation)
+  pickerSelectedBg: "#3a3a3a",
 
   // Roles
   roleUser: "#5fafff",
