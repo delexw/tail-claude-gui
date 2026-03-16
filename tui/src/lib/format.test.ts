@@ -47,9 +47,9 @@ describe("roleColor", () => {
 
 describe("roleIcon", () => {
   it("returns correct icons", () => {
-    expect(roleIcon("claude")).toBe("✦");
-    expect(roleIcon("user")).toBe("●");
-    expect(roleIcon("system")).toBe("$");
+    expect(roleIcon("claude")).toBe("\uF167A"); // nf-md-robot
+    expect(roleIcon("user")).toBe("\uF007"); // nf-fa-user
+    expect(roleIcon("system")).toBe("\uF120"); // nf-fa-terminal
     expect(roleIcon("other")).toBe(" ");
   });
 });

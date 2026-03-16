@@ -1,23 +1,23 @@
 import type { DisplayItem } from "../api.js";
 import { truncate } from "./format.js";
 
-/** Unicode icon for a DisplayItem type (matches web's Icons.tsx). */
+/** Nerd Font icon for a DisplayItem type (matches Go TUI). */
 export function getItemIcon(item: DisplayItem): string {
   switch (item.item_type) {
     case "Thinking":
-      return "◆";
+      return "\uF0EB"; // nf-fa-lightbulb (U+F0EB)
     case "Output":
-      return "▪";
+      return "\uF0182"; // nf-md-comment (U+F0182)
     case "ToolCall":
-      return item.tool_error ? "✗" : "⚙";
+      return item.tool_error ? "\uF0BE0" : "\uF0BE0"; // nf-md-wrench (U+F0BE0)
     case "Subagent":
-      return "✦";
+      return "\uF167A"; // nf-md-robot (U+F167A)
     case "TeammateMessage":
-      return "◈";
+      return "\uF167A"; // nf-md-robot (U+F167A)
     case "HookEvent":
-      return "⚡";
+      return "\uF0EB"; // nf-fa-lightbulb (U+F0EB)
     default:
-      return "·";
+      return "\u00B7"; // middle dot
   }
 }
 

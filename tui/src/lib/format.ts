@@ -44,15 +44,15 @@ export function roleColor(role: string): string {
   }
 }
 
-/** Returns a unicode icon for a message role (matches web's VscAccount/Claude/VscTerminal). */
+/** Returns a Nerd Font icon for a message role (matches Go TUI). */
 export function roleIcon(role: string): string {
   switch (role) {
     case "claude":
-      return "✦";
+      return "\uF167A"; // nf-md-robot (U+F167A)
     case "user":
-      return "●";
+      return "\uF007"; // nf-fa-user (U+F007)
     case "system":
-      return "$";
+      return "\uF120"; // nf-fa-terminal (U+F120)
     default:
       return " ";
   }
