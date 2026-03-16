@@ -1307,7 +1307,6 @@ body {
 .message-detail__text {
   font-size: 13px;
   line-height: 1.6;
-  white-space: pre-wrap;
   word-break: break-word;
   margin-bottom: 16px;
 }
