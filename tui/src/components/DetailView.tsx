@@ -77,7 +77,6 @@ export function DetailView({
         borderStyle="round"
         borderColor={colors.border}
         paddingX={2}
-        width={contentWidth}
       >
         <Box gap={1}>
           {depth > 0 ? <Text dimColor>{"\u25B8".repeat(depth)} </Text> : null}

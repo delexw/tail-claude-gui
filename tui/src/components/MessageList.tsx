@@ -19,9 +19,9 @@ interface MessageListProps {
 export function MessageList({ messages, selectedIndex, expandedSet, ongoing }: MessageListProps) {
   const cols = process.stdout.columns || 80;
   const contentWidth = Math.min(cols, MAX_CONTENT_WIDTH);
-  // Each message renders 3 lines (header + content + stats)
+  // Each message card: border top(1) + header(1) + body(1) + stats(1) + border bottom(1) = 5 lines
   const rows = process.stdout.rows || 24;
-  const windowSize = Math.max(4, Math.floor((rows - 4) / 3));
+  const windowSize = Math.max(3, Math.floor((rows - 4) / 5));
   const { start, end } = stableWindow("messages", selectedIndex, messages.length, windowSize);
   const visible = messages.slice(start, end);
 
@@ -75,7 +75,6 @@ export function MessageList({ messages, selectedIndex, expandedSet, ongoing }: M
             borderStyle="round"
             borderColor={borderClr}
             paddingX={2}
-            width={contentWidth}
           >
             {/* Header: role icon + name + model + stats */}
             <Box gap={1}>
