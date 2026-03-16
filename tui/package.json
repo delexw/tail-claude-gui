@@ -9,7 +9,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "start": "node dist/cli.js"
+    "start": "node dist/cli.js",
+    "check": "tsc --noEmit"
   },
   "dependencies": {
     "@inkjs/ui": "^2.0.0",

@@ -45,10 +45,16 @@
     "browser": true
   },
   "globals": {},
-  "ignorePatterns": ["dist", "src-tauri/gen", "src-tauri/target", "tui"],
+  "ignorePatterns": ["dist", "src-tauri/gen", "src-tauri/target"],
   "overrides": [
     {
       "files": ["src/lib/invoke.ts", "src/lib/listen.ts", "src/lib/openUrl.ts"],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    },
+    {
+      "files": ["tui/**/*.ts", "tui/**/*.tsx"],
       "rules": {
         "no-restricted-imports": "off"
       }

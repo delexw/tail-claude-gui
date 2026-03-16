@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
 import { Spinner } from "@inkjs/ui";
-import { api, type DisplayMessage, type LoadResult } from "./api.js";
+import { api, type DisplayMessage } from "./api.js";
 import { useSSE } from "./useSSE.js";
 
 interface MessageViewProps {
@@ -74,7 +74,7 @@ export function MessageView({ sessionPath, onBack }: MessageViewProps) {
         setTotals(result.session_totals);
         setSelected(result.messages.length - 1);
         await api.watchSession(sessionPath);
-      } catch (e) {
+      } catch {
         // ignore
       }
       setLoading(false);
@@ -206,8 +206,8 @@ export function MessageView({ sessionPath, onBack }: MessageViewProps) {
               {/* Expanded: show items */}
               {isExpanded && msg.items.length > 0 && (
                 <Box flexDirection="column" paddingLeft={4} marginBottom={1}>
-                  {msg.items.map((item, j) => (
-                    <Box key={j}>
+                  {msg.items.map((item) => (
+                    <Box key={`${item.item_type}-${item.tool_name || item.text.slice(0, 20)}`}>
                       <Text dimColor>
                         {item.item_type === "ToolCall" ? (
                           <Text color={item.tool_error ? "red" : "blue"}>
