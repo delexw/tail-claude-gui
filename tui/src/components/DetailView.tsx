@@ -123,7 +123,6 @@ export function DetailView({
               <Box
                 key={`${item.item_type}-${idx}-${item.tool_name || item.agent_id || ""}`}
                 flexDirection="row"
-                marginBottom={0}
               >
                 {/* Left accent — double bar for subagents with messages */}
                 <Text color={accentClr}>{hasAgent ? IconBarDouble : IconBarSingle}</Text>
