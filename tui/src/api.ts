@@ -51,6 +51,6 @@ export const api = {
   getDebugLog: (sessionPath: string) =>
     get<DebugEntry[]>(`/api/debug-log?path=${encodeURIComponent(sessionPath)}`),
   getGitInfo: (cwd: string) => get<GitInfo>(`/api/git-info?cwd=${encodeURIComponent(cwd)}`),
-  watchPicker: (dirs: string[]) => post<void>("/api/picker/watch", { dirs }),
+  watchPicker: (dirs: string[]) => post<void>("/api/picker/watch", { projectDirs: dirs }),
   unwatchPicker: () => post<void>("/api/picker/unwatch"),
 };
