@@ -3,30 +3,11 @@ import { Box, Text, useInput } from "ink";
 import { Spinner } from "@inkjs/ui";
 import { api, type DisplayMessage } from "./api.js";
 import { useSSE } from "./useSSE.js";
+import { formatTokens, formatDuration, truncate } from "../../shared/format.js";
 
 interface MessageViewProps {
   sessionPath: string;
   onBack: () => void;
-}
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return String(n);
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  const s = ms / 1000;
-  if (s < 60) return `${s.toFixed(1)}s`;
-  const m = Math.floor(s / 60);
-  return `${m}m ${Math.floor(s % 60)}s`;
-}
-
-function truncate(s: string, max: number): string {
-  // Strip newlines for single-line display
-  const line = s.replace(/\n/g, " ").trim();
-  return line.length > max ? line.slice(0, max - 1) + "…" : line;
 }
 
 function roleColor(role: string): string {

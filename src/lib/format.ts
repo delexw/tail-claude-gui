@@ -1,6 +1,8 @@
 // Format utilities — ported from format.go
+// Pure shared utilities are re-exported from shared/format.ts.
 
 import type { DisplayMessage } from "../types";
+export { formatTokens } from "../../shared/format";
 
 /**
  * Turns "claude-opus-4-6" into "opus4.6".
@@ -19,15 +21,6 @@ export function shortModel(m: string): string {
     version = vParts[0] + "." + vParts[1];
   }
   return family + version;
-}
-
-/**
- * Formats a token count: 1234 -> "1.2k", 123456 -> "123.5k", 1234567 -> "1.2M"
- */
-export function formatTokens(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + "k";
-  return String(n);
 }
 
 // Claude API pricing per million tokens (USD).
