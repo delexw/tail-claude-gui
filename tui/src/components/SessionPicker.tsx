@@ -8,32 +8,13 @@ import {
   formatDuration,
   timeAgo,
   truncate,
-} from "../../../shared/format.js";
+  shortModel,
+  modelColor,
+} from "../lib/format.js";
 
 interface SessionPickerProps {
   onSelect: (session: SessionInfo) => void;
   onQuit: () => void;
-}
-
-function shortModel(m: string): string {
-  const s = m.replace(/^claude-/, "");
-  const dashIdx = s.indexOf("-");
-  if (dashIdx === -1) return s;
-  const family = s.slice(0, dashIdx);
-  const rest = s.slice(dashIdx + 1);
-  const vParts = rest.split("-");
-  let version = vParts[0];
-  if (vParts.length >= 2) {
-    version = vParts[0] + "." + vParts[1];
-  }
-  return family + version;
-}
-
-function modelColor(m: string): string {
-  if (m.includes("opus")) return "red";
-  if (m.includes("sonnet")) return "blue";
-  if (m.includes("haiku")) return "green";
-  return "white";
 }
 
 interface DateGroup {

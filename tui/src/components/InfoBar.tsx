@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Box, Text } from "ink";
 import type { DisplayMessage, SessionMeta, SessionTotals } from "../api.js";
-import { formatTokens, formatCost } from "../../../shared/format.js";
+import { formatTokens, formatCost } from "../lib/format.js";
 
 interface InfoBarProps {
   meta: SessionMeta;

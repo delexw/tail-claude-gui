@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
 import type { DisplayMessage } from "../api.js";
-import { formatTokens, formatDuration } from "../../../shared/format.js";
+import { formatTokens, formatDuration } from "../lib/format.js";
 
 export interface Stats {
   tokens: number;

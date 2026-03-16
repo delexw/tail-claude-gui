@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
 import type { DebugEntry } from "../api.js";
-import { truncate } from "../../../shared/format.js";
+import { truncate } from "../lib/format.js";
 
 interface DebugViewerProps {
   entries: DebugEntry[];

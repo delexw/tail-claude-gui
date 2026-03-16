@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
 import type { DisplayMessage } from "../api.js";
-import { truncate } from "../../../shared/format.js";
+import { truncate, roleColor, roleIcon, shortModel, modelColor, firstLine } from "../lib/format.js";
 import { StatsBar, statsFromMessage } from "./StatsBar.js";
 
 interface MessageListProps {
@@ -8,58 +8,6 @@ interface MessageListProps {
   selectedIndex: number;
   expandedSet: Set<number>;
   ongoing: boolean;
-}
-
-function roleColor(role: string): string {
-  switch (role) {
-    case "claude":
-      return "magenta";
-    case "user":
-      return "green";
-    case "system":
-      return "yellow";
-    default:
-      return "white";
-  }
-}
-
-function roleIcon(role: string): string {
-  switch (role) {
-    case "claude":
-      return "🤖";
-    case "user":
-      return "👤";
-    case "system":
-      return "⚙️";
-    default:
-      return "  ";
-  }
-}
-
-function shortModel(m: string): string {
-  const s = m.replace(/^claude-/, "");
-  const dashIdx = s.indexOf("-");
-  if (dashIdx === -1) return s;
-  const family = s.slice(0, dashIdx);
-  const rest = s.slice(dashIdx + 1);
-  const vParts = rest.split("-");
-  let version = vParts[0];
-  if (vParts.length >= 2) {
-    version = vParts[0] + "." + vParts[1];
-  }
-  return family + version;
-}
-
-function modelColor(m: string): string {
-  if (m.includes("opus")) return "red";
-  if (m.includes("sonnet")) return "blue";
-  if (m.includes("haiku")) return "green";
-  return "white";
-}
-
-function firstLine(text: string): string {
-  const idx = text.indexOf("\n");
-  return idx === -1 ? text : text.slice(0, idx);
 }
 
 export function MessageList({ messages, selectedIndex, expandedSet, ongoing }: MessageListProps) {

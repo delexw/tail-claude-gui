@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
 import type { DisplayMessage, DisplayItem } from "../api.js";
-import { formatDuration, truncate } from "../../../shared/format.js";
+import { formatDuration, truncate, roleColor, roleIcon, formatJson } from "../lib/format.js";
 import { StatsBar, statsFromMessage } from "./StatsBar.js";
 
 interface DetailViewProps {
@@ -8,32 +8,6 @@ interface DetailViewProps {
   selectedItem: number;
   expandedItems: Set<number>;
   ongoing: boolean;
-}
-
-function roleColor(role: string): string {
-  switch (role) {
-    case "claude":
-      return "magenta";
-    case "user":
-      return "green";
-    case "system":
-      return "yellow";
-    default:
-      return "white";
-  }
-}
-
-function roleIcon(role: string): string {
-  switch (role) {
-    case "claude":
-      return "🤖";
-    case "user":
-      return "👤";
-    case "system":
-      return "⚙️";
-    default:
-      return "  ";
-  }
 }
 
 function getItemIcon(item: DisplayItem): string {
@@ -96,14 +70,6 @@ function getItemSummary(item: DisplayItem): string {
           : "";
     default:
       return "";
-  }
-}
-
-function formatJson(input: string): string {
-  try {
-    return JSON.stringify(JSON.parse(input), null, 2);
-  } catch {
-    return input;
   }
 }
 
