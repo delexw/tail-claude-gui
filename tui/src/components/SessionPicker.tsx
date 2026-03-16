@@ -16,6 +16,7 @@ interface SessionPickerProps {
   sessions: SessionInfo[];
   loading: boolean;
   error: string;
+  inputDisabled?: boolean;
   onSelect: (session: SessionInfo) => void;
   onQuit: () => void;
 }
@@ -57,7 +58,14 @@ function groupByDate(items: SessionInfo[]): DateGroup[] {
     .map((category) => ({ category, items: groups[category] }));
 }
 
-export function SessionPicker({ sessions, loading, error, onSelect, onQuit }: SessionPickerProps) {
+export function SessionPicker({
+  sessions,
+  loading,
+  error,
+  inputDisabled,
+  onSelect,
+  onQuit,
+}: SessionPickerProps) {
   const [selected, setSelected] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchActive, setSearchActive] = useState(false);
@@ -92,6 +100,7 @@ export function SessionPicker({ sessions, loading, error, onSelect, onQuit }: Se
   const totalCost = useMemo(() => sessions.reduce((sum, s) => sum + s.cost_usd, 0), [sessions]);
 
   useInput((input, key) => {
+    if (inputDisabled) return;
     if (searchActive) {
       if (key.escape) {
         setSearchActive(false);
@@ -236,10 +245,11 @@ export function SessionPicker({ sessions, loading, error, onSelect, onQuit }: Se
                   borderColor={borderClr}
                   paddingLeft={1}
                 >
-                  {/* Top line: preview + active badge */}
+                  {/* Top line: selection indicator + preview + active badge */}
                   <Box gap={1}>
-                    <Text bold={isSelected} color={isSelected ? "blue" : undefined}>
-                      {truncate(s.first_message || s.session_id, cols - 24)}
+                    <Text bold inverse={isSelected} color={isSelected ? "blue" : undefined}>
+                      {isSelected ? "▸ " : "  "}
+                      {truncate(s.first_message || s.session_id, cols - 28)}
                     </Text>
                     {s.is_ongoing && (
                       <Text color="green" bold>

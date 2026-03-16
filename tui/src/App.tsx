@@ -319,6 +319,7 @@ export function App() {
             sessions={pickerSessions}
             loading={pickerLoading}
             error={pickerError}
+            inputDisabled={sidebarFocused}
             onSelect={handleSelectSession}
             onQuit={exit}
           />

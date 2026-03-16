@@ -81,9 +81,10 @@ export function MessageList({ messages, selectedIndex, expandedSet, ongoing }: M
             paddingLeft={1}
             marginBottom={0}
           >
-            {/* Header: role icon + name + model + badges */}
+            {/* Header: selection indicator + role icon + name + model + badges */}
             <Box gap={1}>
-              <Text bold color={roleColor(msg.role)}>
+              <Text bold inverse={isSelected} color={isSelected ? "blue" : roleColor(msg.role)}>
+                {isSelected ? "▸ " : "  "}
                 {roleIcon(msg.role)}{" "}
                 {msg.role === "claude" ? "Claude" : msg.role === "user" ? "User" : "System"}
               </Text>
