@@ -3,7 +3,7 @@ import type { DisplayMessage } from "../api.js";
 import { truncate, roleColor, roleIcon, shortModel, modelColor, firstLine } from "../lib/format.js";
 import { colors, getRoleBorderColor, getItemColor } from "../lib/theme.js";
 import { StatsBar, statsFromMessage } from "./StatsBar.js";
-import { OngoingDots } from "./OngoingDots.js";
+import { BrailleSpinner } from "./OngoingDots.js";
 
 interface MessageListProps {
   messages: DisplayMessage[];
@@ -82,7 +82,7 @@ export function MessageList({ messages, selectedIndex, expandedSet, ongoing }: M
                     [{msg.subagent_label}]
                   </Text>
                 ) : null}
-                {isLast && ongoing ? <OngoingDots /> : null}
+                {isLast && ongoing ? <BrailleSpinner /> : null}
                 {isSelected ? (
                   <Text dimColor>
                     [{idx + 1}/{messages.length}]

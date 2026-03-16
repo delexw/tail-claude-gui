@@ -2,58 +2,56 @@ import { useState, useEffect } from "react";
 import { Text } from "ink";
 import { colors } from "../lib/theme.js";
 
-interface OngoingDotsProps {
-  count?: number;
-}
-
 /**
- * Single shared frame counter — all OngoingDots instances share one timer
- * to avoid triggering N separate re-render intervals.
+ * Braille spinner — matches the web's .braille-spinner CSS animation.
+ * Single global timer shared across all instances to avoid render storms.
  */
+
+const BRAILLE_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
 let globalFrame = 0;
-let listenerCount = 0;
-let globalTimer: ReturnType<typeof setInterval> | null = null;
-const listeners = new Set<() => void>();
+let refCount = 0;
+let timer: ReturnType<typeof setInterval> | null = null;
+const subscribers = new Set<() => void>();
 
 function subscribe(cb: () => void): () => void {
-  listeners.add(cb);
-  listenerCount++;
-  if (!globalTimer) {
-    globalTimer = setInterval(() => {
-      globalFrame = (globalFrame + 1) % 7;
-      for (const fn of listeners) fn();
-    }, 300);
+  subscribers.add(cb);
+  refCount++;
+  if (!timer) {
+    timer = setInterval(() => {
+      globalFrame = (globalFrame + 1) % BRAILLE_FRAMES.length;
+      for (const fn of subscribers) fn();
+    }, 100);
   }
   return () => {
-    listeners.delete(cb);
-    listenerCount--;
-    if (listenerCount <= 0 && globalTimer) {
-      clearInterval(globalTimer);
-      globalTimer = null;
-      listenerCount = 0;
+    subscribers.delete(cb);
+    refCount--;
+    if (refCount <= 0 && timer) {
+      clearInterval(timer);
+      timer = null;
+      refCount = 0;
     }
   };
 }
 
-/**
- * Animated pulsing dots indicator — terminal equivalent of the web's
- * CSS-animated OngoingDots. Shares a single global timer across all instances.
- */
-export function OngoingDots({ count = 5 }: OngoingDotsProps) {
+/** Braille spinner for info bar / active session indicator. Matches web's braille-spinner. */
+export function BrailleSpinner() {
   const [frame, setFrame] = useState(globalFrame);
 
-  useEffect(() => {
-    return subscribe(() => setFrame(globalFrame));
-  }, []);
-
-  const dots: string[] = [];
-  for (let i = 0; i < count; i++) {
-    dots.push(i === frame % (count + 2) || i === (frame % (count + 2)) - 1 ? "●" : "·");
-  }
+  useEffect(() => subscribe(() => setFrame(globalFrame)), []);
 
   return (
     <Text color={colors.ongoing} bold>
-      {dots.join("")}
+      {BRAILLE_FRAMES[frame]} active
+    </Text>
+  );
+}
+
+/** Static green dot — matches web's CSS pulse dot (no animation in terminal to avoid re-render cost). */
+export function OngoingDot() {
+  return (
+    <Text color={colors.ongoing} bold>
+      ●
     </Text>
   );
 }

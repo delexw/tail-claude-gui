@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { Box, Text } from "ink";
 import type { SessionInfo } from "../api.js";
 import { colors } from "../lib/theme.js";
-import { OngoingDots } from "./OngoingDots.js";
+import { OngoingDot } from "./OngoingDots.js";
 import { buildFlatItems } from "../../../shared/projectTree.js";
 import type { FlatItem } from "../../../shared/projectTree.js";
 
@@ -72,7 +72,7 @@ export function ProjectTree({
               {label} <Text dimColor>{item.count}</Text>
               {item.ongoing ? " " : ""}
             </Text>
-            {item.ongoing ? <OngoingDots count={1} /> : null}
+            {item.ongoing ? <OngoingDot /> : null}
           </Box>
         );
       })}

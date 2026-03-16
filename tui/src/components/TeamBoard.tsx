@@ -1,7 +1,7 @@
 import { Box, Text } from "ink";
 import type { TeamSnapshot } from "../api.js";
 import { colors, getTeamColor } from "../lib/theme.js";
-import { OngoingDots } from "./OngoingDots.js";
+import { OngoingDot } from "./OngoingDots.js";
 
 interface TeamBoardProps {
   teams: TeamSnapshot[];
@@ -77,7 +77,7 @@ export function TeamBoard({ teams }: TeamBoardProps) {
                 return (
                   <Box key={m} gap={0}>
                     <Text color={memberColor(clr)}>{m}</Text>
-                    {isOngoing ? <OngoingDots count={1} /> : null}
+                    {isOngoing ? <OngoingDot /> : null}
                   </Box>
                 );
               })}

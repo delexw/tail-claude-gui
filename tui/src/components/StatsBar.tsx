@@ -52,22 +52,22 @@ export function StatsBar({ stats }: { stats: Stats }) {
       )}
       {stats.toolCount > 0 && (
         <Text dimColor color={colors.itemTool}>
-          ⚙{stats.toolCount}
+          ⚙ {stats.toolCount}
         </Text>
       )}
       {stats.thinkingCount > 0 && (
         <Text dimColor color={colors.itemThinking}>
-          💭{stats.thinkingCount}
+          ◆ {stats.thinkingCount}
         </Text>
       )}
-      {stats.outputCount > 0 && <Text dimColor>✎{stats.outputCount}</Text>}
+      {stats.outputCount > 0 && <Text dimColor>▪ {stats.outputCount}</Text>}
       {stats.durationMs > 0 && <Text dimColor>{formatDuration(stats.durationMs)}</Text>}
       {stats.agentCount > 0 && (
         <Text dimColor color={colors.itemAgent}>
-          🤖{stats.agentCount}
+          ✦ {stats.agentCount}
         </Text>
       )}
-      {stats.spawnCount > 0 && <Text dimColor>↗{stats.spawnCount}</Text>}
+      {stats.spawnCount > 0 && <Text dimColor>↗ {stats.spawnCount}</Text>}
     </Box>
   );
 }

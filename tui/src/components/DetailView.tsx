@@ -4,13 +4,14 @@ import { formatDuration, truncate, roleColor, roleIcon, formatJson } from "../li
 import { colors, getItemColor } from "../lib/theme.js";
 import { getItemIcon, getItemName, getItemSummary } from "../lib/items.js";
 import { StatsBar, statsFromMessage } from "./StatsBar.js";
-import { OngoingDots } from "./OngoingDots.js";
+import { BrailleSpinner, OngoingDot } from "./OngoingDots.js";
 
 interface DetailViewProps {
   message: DisplayMessage;
   selectedItem: number;
   expandedItems: Set<number>;
   ongoing: boolean;
+  depth?: number;
 }
 
 function itemBorderColor(item: DisplayItem, isSelected: boolean): string {
@@ -18,7 +19,13 @@ function itemBorderColor(item: DisplayItem, isSelected: boolean): string {
   return getItemColor(item.item_type, !!item.tool_error);
 }
 
-export function DetailView({ message, selectedItem, expandedItems, ongoing }: DetailViewProps) {
+export function DetailView({
+  message,
+  selectedItem,
+  expandedItems,
+  ongoing,
+  depth = 0,
+}: DetailViewProps) {
   const cols = process.stdout.columns || 80;
   const stats = statsFromMessage(message);
 
@@ -31,6 +38,9 @@ export function DetailView({ message, selectedItem, expandedItems, ongoing }: De
   const end = Math.min(items.length, start + windowSize);
   if (end - start < windowSize) start = Math.max(0, end - windowSize);
   const visible = items.slice(start, end);
+
+  // Fixed-width name column so summaries align
+  const maxNameLen = Math.max(4, ...visible.map((it) => getItemName(it).length));
 
   return (
     <Box flexDirection="column">
@@ -45,6 +55,7 @@ export function DetailView({ message, selectedItem, expandedItems, ongoing }: De
         paddingX={1}
       >
         <Box gap={1}>
+          {depth > 0 ? <Text dimColor>{"▸".repeat(depth)} </Text> : null}
           <Text bold color={roleColor(message.role)}>
             {roleIcon(message.role)}{" "}
             {message.role === "claude" ? "Claude" : message.role === "user" ? "User" : "System"}
@@ -53,7 +64,7 @@ export function DetailView({ message, selectedItem, expandedItems, ongoing }: De
             <Text color={colors.itemAgent}>[{message.subagent_label}]</Text>
           ) : null}
           <StatsBar stats={stats} />
-          {ongoing ? <OngoingDots /> : null}
+          {ongoing ? <BrailleSpinner /> : null}
         </Box>
         {items.length > 0 ? (
           <Text dimColor wrap="truncate">
@@ -83,7 +94,8 @@ export function DetailView({ message, selectedItem, expandedItems, ongoing }: De
                   {/* Item header */}
                   <Box gap={1}>
                     <Text bold={isSelected} inverse={isSelected} color={clr}>
-                      {isExpanded ? "▼" : "▶"} {getItemIcon(item)} {getItemName(item)}
+                      {isExpanded ? "▼" : "▶"} {getItemIcon(item)}{" "}
+                      {getItemName(item).padEnd(maxNameLen)}
                     </Text>
                     {getItemSummary(item) ? (
                       <Text dimColor>— {truncate(getItemSummary(item), cols - 35)}</Text>
@@ -91,7 +103,7 @@ export function DetailView({ message, selectedItem, expandedItems, ongoing }: De
                     {item.duration_ms > 0 ? (
                       <Text dimColor>{formatDuration(item.duration_ms)}</Text>
                     ) : null}
-                    {item.subagent_ongoing ? <OngoingDots count={3} /> : null}
+                    {item.subagent_ongoing ? <OngoingDot /> : null}
                     {item.agent_id ? <Text dimColor>[{item.agent_id.slice(0, 8)}]</Text> : null}
                   </Box>
 

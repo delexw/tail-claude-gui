@@ -11,7 +11,7 @@ import {
   shortModel,
   modelColor,
 } from "../lib/format.js";
-import { OngoingDots } from "./OngoingDots.js";
+import { OngoingDot } from "./OngoingDots.js";
 import { colors } from "../lib/theme.js";
 
 interface SessionPickerProps {
@@ -153,7 +153,7 @@ export function SessionPicker({ sessions, loading, error, selectedIndex }: Sessi
                       >
                         {truncate(s.first_message || s.session_id, cols - 28)}
                       </Text>
-                      {s.is_ongoing && <OngoingDots count={3} />}
+                      {s.is_ongoing && <OngoingDot />}
                     </Box>
                     <Box gap={1}>
                       {model && <Text color={modelColor(s.model)}>{model}</Text>}

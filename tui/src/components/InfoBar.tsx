@@ -3,7 +3,7 @@ import { Box, Text } from "ink";
 import type { DisplayMessage, SessionMeta, SessionTotals } from "../api.js";
 import { formatTokens, formatCost } from "../lib/format.js";
 import { colors, getContextColor } from "../lib/theme.js";
-import { OngoingDots } from "./OngoingDots.js";
+import { BrailleSpinner } from "./OngoingDots.js";
 
 interface InfoBarProps {
   meta: SessionMeta;
@@ -98,7 +98,7 @@ export function InfoBar({ meta, messages, sessionTotals, sessionPath, ongoing }:
         {sessionTotals.cost_usd > 0 ? (
           <Text color={colors.tokenHigh}>{formatCost(sessionTotals.cost_usd)}</Text>
         ) : null}
-        {ongoing ? <OngoingDots /> : null}
+        {ongoing ? <BrailleSpinner /> : null}
       </Box>
     </Box>
   );

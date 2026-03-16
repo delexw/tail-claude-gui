@@ -4,6 +4,7 @@ import { Spinner } from "@inkjs/ui";
 import type {
   SessionInfo,
   DisplayMessage,
+  DisplayItem,
   TeamSnapshot,
   DebugEntry,
   SessionMeta,
@@ -111,6 +112,13 @@ export function App() {
   const [selectedMessage, setSelectedMessage] = useState(0);
   const [selectedItem, setSelectedItem] = useState(0);
   const [debugSelected, setDebugSelected] = useState(0);
+
+  // Subagent drill-down: when entering a subagent item, we show its
+  // subagent_messages as a message list. The user can then Enter a message
+  // to see its items. This mirrors the web's panel stack.
+  const [subagentItem, setSubagentItem] = useState<DisplayItem | null>(null);
+  const [subagentMsgIdx, setSubagentMsgIdx] = useState(0); // selected message in subagent list
+  const [subagentDetailMsg, setSubagentDetailMsg] = useState<DisplayMessage | null>(null); // drilled into a msg
 
   const loadSession = useCallback(
     async (path: string) => {
@@ -229,6 +237,8 @@ export function App() {
           if (messages.length > 0 && messages[selectedMessage]) {
             setSelectedItem(0);
             expandedItems.clear();
+            setSubagentItem(null);
+            setSubagentDetailMsg(null);
             setView("detail");
           }
         } else if (input === "e") {
@@ -256,19 +266,75 @@ export function App() {
         break;
       }
       case "detail": {
-        const items = messages[selectedMessage]?.items || [];
-        if (input === "j" || key.downArrow) {
-          setSelectedItem((i) => Math.min(i + 1, items.length - 1));
-        } else if (input === "k" || key.upArrow) {
-          setSelectedItem((i) => Math.max(i - 1, 0));
-        } else if (key.tab || key.return) {
-          expandedItems.toggle(selectedItem);
-        } else if (input === "e") {
-          expandedItems.addAll(items.map((_it, i) => i));
-        } else if (input === "c") {
-          expandedItems.clear();
-        } else if (input === "q" || key.escape) {
-          setView("list");
+        if (subagentItem && !subagentDetailMsg) {
+          // Viewing subagent message list
+          const msgs = subagentItem.subagent_messages;
+          if (input === "j" || key.downArrow) {
+            setSubagentMsgIdx((i) => Math.min(i + 1, msgs.length - 1));
+          } else if (input === "k" || key.upArrow) {
+            setSubagentMsgIdx((i) => Math.max(i - 1, 0));
+          } else if (key.return) {
+            // Enter a message to see its items
+            if (msgs[subagentMsgIdx]) {
+              setSubagentDetailMsg(msgs[subagentMsgIdx]);
+              setSelectedItem(0);
+              expandedItems.clear();
+            }
+          } else if (input === "q" || key.escape) {
+            setSubagentItem(null);
+            setSubagentMsgIdx(0);
+          }
+        } else if (subagentDetailMsg) {
+          // Viewing items of a subagent message
+          const items = subagentDetailMsg.items || [];
+          if (input === "j" || key.downArrow) {
+            setSelectedItem((i) => Math.min(i + 1, items.length - 1));
+          } else if (input === "k" || key.upArrow) {
+            setSelectedItem((i) => Math.max(i - 1, 0));
+          } else if (key.tab || key.return) {
+            const item = items[selectedItem];
+            if (key.return && item?.subagent_messages?.length > 0) {
+              // Nested subagent — drill deeper
+              setSubagentItem(item);
+              setSubagentDetailMsg(null);
+              setSubagentMsgIdx(0);
+            } else {
+              expandedItems.toggle(selectedItem);
+            }
+          } else if (input === "e") {
+            expandedItems.addAll(items.map((_it, i) => i));
+          } else if (input === "c") {
+            expandedItems.clear();
+          } else if (input === "q" || key.escape) {
+            // Back to subagent message list
+            setSubagentDetailMsg(null);
+            setSubagentMsgIdx(0);
+          }
+        } else {
+          // Top-level detail view (main message items)
+          const items = messages[selectedMessage]?.items || [];
+          if (input === "j" || key.downArrow) {
+            setSelectedItem((i) => Math.min(i + 1, items.length - 1));
+          } else if (input === "k" || key.upArrow) {
+            setSelectedItem((i) => Math.max(i - 1, 0));
+          } else if (key.tab) {
+            expandedItems.toggle(selectedItem);
+          } else if (key.return) {
+            const item = items[selectedItem];
+            if (item?.subagent_messages?.length > 0) {
+              setSubagentItem(item);
+              setSubagentMsgIdx(0);
+              setSubagentDetailMsg(null);
+            } else {
+              expandedItems.toggle(selectedItem);
+            }
+          } else if (input === "e") {
+            expandedItems.addAll(items.map((_it, i) => i));
+          } else if (input === "c") {
+            expandedItems.clear();
+          } else if (input === "q" || key.escape) {
+            setView("list");
+          }
         }
         break;
       }
@@ -341,7 +407,31 @@ export function App() {
             ongoing={ongoing}
           />
         );
-      case "detail":
+      case "detail": {
+        if (subagentItem && !subagentDetailMsg) {
+          // Show subagent's messages as a list
+          return (
+            <MessageList
+              messages={subagentItem.subagent_messages}
+              selectedIndex={subagentMsgIdx}
+              expandedSet={expandedMessages.set}
+              ongoing={subagentItem.subagent_ongoing}
+            />
+          );
+        }
+        if (subagentDetailMsg) {
+          // Show a subagent message's items
+          return (
+            <DetailView
+              message={subagentDetailMsg}
+              selectedItem={selectedItem}
+              expandedItems={expandedItems.set}
+              ongoing={false}
+              depth={1}
+            />
+          );
+        }
+        // Top-level message detail
         if (messages[selectedMessage]) {
           return (
             <DetailView
@@ -353,6 +443,7 @@ export function App() {
           );
         }
         return null;
+      }
       case "team":
         return <TeamBoard teams={teams} />;
       case "debug":
@@ -393,7 +484,9 @@ export function App() {
           view === "list"
             ? `${selectedMessage + 1}/${messages.length}`
             : view === "detail"
-              ? `${selectedItem + 1}/${messages[selectedMessage]?.items.length || 0}`
+              ? subagentItem && !subagentDetailMsg
+                ? `agent ${subagentMsgIdx + 1}/${subagentItem.subagent_messages.length}`
+                : `${subagentDetailMsg ? "agent " : ""}${selectedItem + 1}/${(subagentDetailMsg ?? messages[selectedMessage])?.items.length || 0}`
               : view === "debug"
                 ? `${debugSelected + 1}/${debugEntries.length}`
                 : view === "picker"
