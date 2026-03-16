@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { useApp, useInput } from "ink";
 import type { SessionInfo } from "./api.js";
 import { SessionPicker } from "./SessionPicker.js";
