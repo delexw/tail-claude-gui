@@ -10,7 +10,7 @@ import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import { execSync } from "node:child_process";
 
-const LABEL = "com.cctrace.web";
+const LABEL = "com.claude-code-trace.web-server";
 
 function findBinary() {
   try {
@@ -25,7 +25,9 @@ function isInstalled() {
     case "darwin":
       return existsSync(join(homedir(), "Library", "LaunchAgents", `${LABEL}.plist`));
     case "linux":
-      return existsSync(join(homedir(), ".config", "systemd", "user", "cctrace-web.service"));
+      return existsSync(
+        join(homedir(), ".config", "systemd", "user", "claude-code-trace-web.service"),
+      );
     case "win32": {
       const startup = join(
         process.env.APPDATA || join(homedir(), "AppData", "Roaming"),
@@ -34,7 +36,7 @@ function isInstalled() {
         "Start Menu",
         "Programs",
         "Startup",
-        "cctrace-web.vbs",
+        "claude-code-trace-web.vbs",
       );
       return existsSync(startup);
     }
@@ -47,7 +49,7 @@ function installDarwin(bin) {
   const dir = join(homedir(), "Library", "LaunchAgents");
   mkdirSync(dir, { recursive: true });
   const plist = join(dir, `${LABEL}.plist`);
-  const logPath = join(homedir(), ".claude", "cctrace-web.log");
+  const logPath = join(homedir(), ".claude", "claude-code-trace-web.log");
   const currentPath = process.env.PATH || "/usr/local/bin:/usr/bin:/bin";
   writeFileSync(
     plist,
@@ -94,7 +96,7 @@ function installDarwin(bin) {
 function installLinux(bin) {
   const dir = join(homedir(), ".config", "systemd", "user");
   mkdirSync(dir, { recursive: true });
-  const unit = join(dir, "cctrace-web.service");
+  const unit = join(dir, "claude-code-trace-web.service");
   const currentPath = process.env.PATH || "/usr/local/bin:/usr/bin:/bin";
   writeFileSync(
     unit,
@@ -113,9 +115,9 @@ WantedBy=default.target
 `,
   );
   execSync("systemctl --user daemon-reload");
-  execSync("systemctl --user enable --now cctrace-web.service");
+  execSync("systemctl --user enable --now claude-code-trace-web.service");
   console.error("Installed! cctrace --web will start on login.");
-  console.error("  Logs:   journalctl --user -u cctrace-web -f");
+  console.error("  Logs:   journalctl --user -u claude-code-trace-web -f");
   console.error("  Stop:   systemctl --user stop cctrace-web");
   console.error(`  Remove: systemctl --user disable cctrace-web && rm "${unit}"`);
 }
@@ -134,7 +136,7 @@ function installWindows(bin) {
     console.error("You can manually add cctrace --web to Task Scheduler.");
     return;
   }
-  const vbs = join(startupDir, "cctrace-web.vbs");
+  const vbs = join(startupDir, "claude-code-trace-web.vbs");
   const winBin = bin.replace(/\//g, "\\");
   writeFileSync(
     vbs,
