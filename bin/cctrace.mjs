@@ -33,29 +33,6 @@ function ask(question) {
   });
 }
 
-/** Wait until the server responds to HTTP, with a timeout. */
-function waitForServer(url, timeoutMs = 120000) {
-  const start = Date.now();
-  return new Promise((res) => {
-    async function check() {
-      if (Date.now() - start > timeoutMs) {
-        // Give up but still open — server might be partially ready.
-        res();
-        return;
-      }
-      try {
-        const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
-        if (resp.ok) {
-          res();
-          return;
-        }
-      } catch {}
-      setTimeout(check, 1000);
-    }
-    check();
-  });
-}
-
 /** Check if a port is already in use. */
 function isPortInUse(port) {
   return new Promise((res) => {
@@ -114,8 +91,10 @@ switch (mode) {
           const { installService } = await import("./install-service.mjs");
           installService();
           // Poll until the server is actually ready, then open browser.
-          console.log("Waiting for server to start...");
-          await waitForServer("http://localhost:1420");
+          execSync("node wait-for-backend.mjs", {
+            stdio: "inherit",
+            cwd: resolve(root, "bin"),
+          });
           openBrowser("http://localhost:1420");
         } else {
           run("npx", ["tauri", "dev", "--", "--", "--web"]);
