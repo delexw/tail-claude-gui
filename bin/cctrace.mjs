@@ -33,21 +33,24 @@ function ask(question) {
   });
 }
 
-/** Wait until a port accepts connections, with a timeout. */
-function waitForPort(port, timeoutMs = 30000) {
+/** Wait until the server responds to HTTP, with a timeout. */
+function waitForServer(url, timeoutMs = 120000) {
   const start = Date.now();
-  return new Promise((res, rej) => {
-    function check() {
+  return new Promise((res) => {
+    async function check() {
       if (Date.now() - start > timeoutMs) {
-        rej(new Error(`Timed out waiting for port ${port}`));
+        // Give up but still open — server might be partially ready.
+        res();
         return;
       }
-      const sock = createConnection({ port, host: "127.0.0.1" });
-      sock.once("connect", () => {
-        sock.destroy();
-        res();
-      });
-      sock.once("error", () => setTimeout(check, 500));
+      try {
+        const resp = await fetch(url, { signal: AbortSignal.timeout(2000) });
+        if (resp.ok) {
+          res();
+          return;
+        }
+      } catch {}
+      setTimeout(check, 1000);
     }
     check();
   });
@@ -112,7 +115,7 @@ switch (mode) {
           installService();
           // Poll until the server is actually ready, then open browser.
           console.log("Waiting for server to start...");
-          await waitForPort(1420, 30000);
+          await waitForServer("http://localhost:1420");
           openBrowser("http://localhost:1420");
         } else {
           run("npx", ["tauri", "dev", "--", "--", "--web"]);
