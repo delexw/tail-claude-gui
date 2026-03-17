@@ -10,7 +10,8 @@ import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import { execSync } from "node:child_process";
 
-const LABEL = "com.claude-code-trace.web-server";
+const LABEL = "Claude Code Trace - Web Server";
+const PLIST_FILE = "com.claude-code-trace.web-server.plist";
 
 function findBinary() {
   try {
@@ -23,7 +24,7 @@ function findBinary() {
 function isInstalled() {
   switch (platform()) {
     case "darwin":
-      return existsSync(join(homedir(), "Library", "LaunchAgents", `${LABEL}.plist`));
+      return existsSync(join(homedir(), "Library", "LaunchAgents", PLIST_FILE));
     case "linux":
       return existsSync(
         join(homedir(), ".config", "systemd", "user", "claude-code-trace-web.service"),
@@ -48,7 +49,7 @@ function isInstalled() {
 function installDarwin(bin) {
   const dir = join(homedir(), "Library", "LaunchAgents");
   mkdirSync(dir, { recursive: true });
-  const plist = join(dir, `${LABEL}.plist`);
+  const plist = join(dir, PLIST_FILE);
   const logPath = join(homedir(), ".claude", "claude-code-trace-web.log");
   const currentPath = process.env.PATH || "/usr/local/bin:/usr/bin:/bin";
   writeFileSync(
