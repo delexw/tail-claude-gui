@@ -33,6 +33,26 @@ function ask(question) {
   });
 }
 
+/** Wait until a port accepts connections, with a timeout. */
+function waitForPort(port, timeoutMs = 30000) {
+  const start = Date.now();
+  return new Promise((res, rej) => {
+    function check() {
+      if (Date.now() - start > timeoutMs) {
+        rej(new Error(`Timed out waiting for port ${port}`));
+        return;
+      }
+      const sock = createConnection({ port, host: "127.0.0.1" });
+      sock.once("connect", () => {
+        sock.destroy();
+        res();
+      });
+      sock.once("error", () => setTimeout(check, 500));
+    }
+    check();
+  });
+}
+
 /** Check if a port is already in use. */
 function isPortInUse(port) {
   return new Promise((res) => {
@@ -90,8 +110,10 @@ switch (mode) {
         if (answer === "2") {
           const { installService } = await import("./install-service.mjs");
           installService();
-          // Wait for the service to start, then open browser.
-          setTimeout(() => openBrowser("http://localhost:1420"), 3000);
+          // Poll until the server is actually ready, then open browser.
+          console.log("Waiting for server to start...");
+          await waitForPort(1420, 30000);
+          openBrowser("http://localhost:1420");
         } else {
           run("npx", ["tauri", "dev", "--", "--", "--web"]);
         }
