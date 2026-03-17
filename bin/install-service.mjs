@@ -9,7 +9,6 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
-import { createInterface } from "node:readline";
 import { execSync } from "node:child_process";
 
 const LABEL = "com.cctrace.web";
@@ -43,16 +42,6 @@ function isInstalled() {
     default:
       return false;
   }
-}
-
-function ask(question) {
-  const rl = createInterface({ input: process.stdin, output: process.stderr });
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      rl.close();
-      resolve(answer.trim().toLowerCase());
-    });
-  });
 }
 
 function installDarwin(bin) {
@@ -148,17 +137,9 @@ function installWindows(bin) {
   console.error(`  Remove: delete "${vbs}"`);
 }
 
-export async function maybeInstallService() {
-  // Skip if not a TTY (piped, background, etc.)
-  if (!process.stdin.isTTY) return;
-  // Skip if already installed
-  if (isInstalled()) return;
+export { isInstalled };
 
-  const answer = await ask(
-    "Would you like to run cctrace --web as a background service on login? [y/N] ",
-  );
-  if (answer !== "y") return;
-
+export function installService() {
   const bin = findBinary();
 
   switch (platform()) {
