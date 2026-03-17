@@ -29,6 +29,14 @@ switch (mode) {
     const webArgs = ["tauri", "dev", "--", "--", "--web"];
     if (noOpen) webArgs.push("--no-open");
     run("npx", webArgs);
+
+    // When running interactively (not --no-open), offer to install as
+    // a background service. Prompt appears once, then never again.
+    if (!noOpen) {
+      const { maybeInstallService } = await import("./install-service.mjs");
+      // Run after a short delay so the server output appears first.
+      setTimeout(() => maybeInstallService().catch(() => {}), 3000);
+    }
     break;
   }
 
