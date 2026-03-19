@@ -250,7 +250,23 @@ pub fn start_picker_watcher(project_dirs: Vec<String>, app: AppHandle) -> Watche
     let (stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
     let (signal_tx, mut signal_rx) = mpsc::channel::<()>(4);
 
-    let dirs_clone = project_dirs.clone();
+    // Derive unique parent directories (e.g. ~/.claude/projects) from the
+    // individual project dirs. Watching the parent instead of individual
+    // subdirs ensures newly created project directories are detected
+    // automatically — no re-registration needed when new projects appear.
+    let mut seen_parents = std::collections::HashSet::new();
+    let base_dirs: Vec<std::path::PathBuf> = project_dirs
+        .iter()
+        .filter_map(|d| Path::new(d).parent().map(|p| p.to_path_buf()))
+        .filter(|p| seen_parents.insert(p.clone()))
+        .collect();
+    // Fallback to individual dirs if parent derivation yielded nothing.
+    let watch_dirs: Vec<std::path::PathBuf> = if base_dirs.is_empty() {
+        project_dirs.iter().map(std::path::PathBuf::from).collect()
+    } else {
+        base_dirs.clone()
+    };
+
     let signal_tx_clone = signal_tx.clone();
 
     // Spawn the file watcher thread.
@@ -262,9 +278,9 @@ pub fn start_picker_watcher(project_dirs: Vec<String>, app: AppHandle) -> Watche
             Err(_) => return,
         };
 
-        for dir in &dirs_clone {
-            if Path::new(dir).exists() {
-                let _ = watcher.watch(Path::new(dir), RecursiveMode::Recursive);
+        for dir in &watch_dirs {
+            if dir.exists() {
+                let _ = watcher.watch(dir, RecursiveMode::Recursive);
             }
         }
 
@@ -288,6 +304,21 @@ pub fn start_picker_watcher(project_dirs: Vec<String>, app: AppHandle) -> Watche
                     break;
                 }
                 Some(()) = signal_rx.recv() => {
+                    // Re-enumerate subdirs fresh from the base dirs on every
+                    // event so newly created project directories are included.
+                    let current_dirs: Vec<String> = base_dirs
+                        .iter()
+                        .flat_map(|base| {
+                            std::fs::read_dir(base)
+                                .ok()
+                                .into_iter()
+                                .flatten()
+                                .flatten()
+                                .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+                                .map(|e| e.path().to_string_lossy().to_string())
+                        })
+                        .collect();
+
                     // Use the session cache for efficient rescanning —
                     // only files whose (mod_time, size) changed get reparsed.
                     let mut sessions = if let Some(state) = app.try_state::<crate::state::AppState>() {
@@ -295,10 +326,10 @@ pub fn start_picker_watcher(project_dirs: Vec<String>, app: AppHandle) -> Watche
                             Ok(c) => c,
                             Err(_) => continue,
                         };
-                        cache.discover_all_project_sessions(&project_dirs)
+                        cache.discover_all_project_sessions(&current_dirs)
                             .unwrap_or_default()
                     } else {
-                        crate::parser::session::discover_all_project_sessions(&project_dirs)
+                        crate::parser::session::discover_all_project_sessions(&current_dirs)
                             .unwrap_or_default()
                     };
 
