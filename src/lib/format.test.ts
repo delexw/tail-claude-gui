@@ -14,6 +14,7 @@ import {
   truncate,
   firstLine,
   formatJson,
+  fenceInlineJson,
   projectKey,
   projectDisplayName,
 } from "./format";
@@ -547,5 +548,64 @@ describe("projectDisplayName", () => {
 
   it("returns key as fallback for empty decode", () => {
     expect(projectDisplayName("")).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fenceInlineJson
+
+describe("fenceInlineJson", () => {
+  it("wraps bare JSON object at end of line in code fence", () => {
+    const input = 'Let me write the output files. {"layers":[{"key":"A"}],"skipped":[]}';
+    const result = fenceInlineJson(input);
+    expect(result).toContain("```json");
+    expect(result).toContain('"layers"');
+    expect(result).toContain("Let me write the output files.");
+  });
+
+  it("wraps a line that is entirely JSON", () => {
+    const input = '{"key":"value","count":42}';
+    const result = fenceInlineJson(input);
+    expect(result).toContain("```json");
+    expect(result).toContain('"key"');
+  });
+
+  it("wraps a bare JSON array", () => {
+    const input = 'Results: [{"id":1},{"id":2}]';
+    const result = fenceInlineJson(input);
+    expect(result).toContain("```json");
+  });
+
+  it("does not wrap plain text with no JSON", () => {
+    const input = "Hello world, no json here.";
+    expect(fenceInlineJson(input)).toBe(input);
+  });
+
+  it("does not wrap content already inside a code fence", () => {
+    const input = '```json\n{"a":1}\n```';
+    expect(fenceInlineJson(input)).toBe(input);
+  });
+
+  it("does not wrap trivially small JSON blobs below min length", () => {
+    const input = 'value: {"a":1}';
+    expect(fenceInlineJson(input)).toBe(input);
+  });
+
+  it("does not wrap empty object or array", () => {
+    expect(fenceInlineJson("result: {}")).toBe("result: {}");
+    expect(fenceInlineJson("result: []")).toBe("result: []");
+  });
+
+  it("preserves text before JSON on a separate line", () => {
+    const input =
+      'Here is the output:\n{"layers":[{"group":[{"key":"EC-001"}]}],"skipped":[],"excluded":[]}';
+    const result = fenceInlineJson(input);
+    expect(result).toContain("Here is the output:");
+    expect(result).toContain("```json");
+  });
+
+  it("leaves non-JSON curly brace content untouched", () => {
+    const input = "Use template {name} for formatting.";
+    expect(fenceInlineJson(input)).toBe(input);
   });
 });

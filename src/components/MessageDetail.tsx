@@ -1,8 +1,16 @@
 import { useState, useCallback, useRef, useLayoutEffect, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import type { DisplayMessage, DisplayItem } from "../types";
-import { shortModel, formatTokens, formatDuration, formatExactTime } from "../lib/format";
+import {
+  shortModel,
+  formatTokens,
+  formatDuration,
+  formatExactTime,
+  fenceInlineJson,
+} from "../lib/format";
 import { getModelColor, getTeamColor } from "../lib/theme";
 import { MessageItem } from "./MessageItem";
 import { DetailItem } from "./DetailItem";
@@ -53,6 +61,31 @@ interface MessageDetailProps {
   ongoing?: boolean;
   onBack: () => void;
   viewActionsRef: ViewActionsRef;
+}
+
+function MarkdownRenderer({ content }: { content: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        code({ className, children }) {
+          const match = /language-(\w+)/.exec(className ?? "");
+          const lang = match ? match[1] : "";
+          const code = String(children).replace(/\n$/, "");
+          if (lang) {
+            return (
+              <SyntaxHighlighter language={lang} style={oneDark} PreTag="div">
+                {code}
+              </SyntaxHighlighter>
+            );
+          }
+          return <code className={className}>{children}</code>;
+        },
+      }}
+    >
+      {fenceInlineJson(content)}
+    </ReactMarkdown>
+  );
 }
 
 export function MessageDetail({
@@ -347,7 +380,7 @@ export function MessageDetail({
           <div className="message-detail__content">
             {msg.content && (
               <div className="message-detail__text">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                <MarkdownRenderer content={msg.content} />
               </div>
             )}
             {hasItems && (
@@ -720,7 +753,7 @@ function AgentDetailColumn({
           <div className="message-detail__content">
             {msg.content && (
               <div className="message-detail__text">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                <MarkdownRenderer content={msg.content} />
               </div>
             )}
             {hasItems && (
