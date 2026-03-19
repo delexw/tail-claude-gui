@@ -80,6 +80,15 @@ pub fn read_session_incremental(
         if n == 0 {
             break;
         }
+
+        // If the line does not end with '\n', it is a partial write at EOF
+        // (Claude Code v2.1.78+ streams responses line-by-line). Do not
+        // advance the offset past the incomplete bytes — wait for the full
+        // line to be flushed on the next watcher event.
+        if !line.ends_with('\n') {
+            break;
+        }
+
         bytes_read += n as u64;
 
         let trimmed = line.trim();
@@ -1237,6 +1246,61 @@ mod tests {
         let mut scanner = IncrementalTokenScanner::new();
         let totals = scanner.scan_new_bytes(path.to_str().unwrap());
         assert_eq!(totals.total_tokens, 75);
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn incremental_read_does_not_advance_past_partial_line() {
+        let tmp = env::temp_dir().join("tail-test-partial-line");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let path = tmp.join("session.jsonl");
+
+        // Write a complete line first.
+        let complete = "{\"type\":\"user\",\"uuid\":\"u1\",\"timestamp\":\"2025-01-15T10:00:00Z\",\"message\":{\"role\":\"user\",\"content\":\"Hello Claude\"}}\n";
+        std::fs::write(&path, complete).unwrap();
+
+        let (msgs, offset, _) = read_session_incremental(path.to_str().unwrap(), 0).unwrap();
+        assert_eq!(msgs.len(), 1, "should parse the complete line");
+
+        // Simulate partial write: append a partial JSON line with no trailing newline.
+        let partial = "{\"type\":\"assistant\",\"uuid\":\"a1\"";
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        use std::io::Write;
+        file.write_all(partial.as_bytes()).unwrap();
+        drop(file);
+
+        // Incremental read from the previous offset should NOT advance past the partial line.
+        let (new_msgs, new_offset, _) =
+            read_session_incremental(path.to_str().unwrap(), offset).unwrap();
+        assert!(
+            new_msgs.is_empty(),
+            "partial line should not produce a message"
+        );
+        assert_eq!(
+            new_offset, offset,
+            "offset must not advance past a partial line"
+        );
+
+        // Now complete the line with a newline — the full entry should be parseable.
+        let rest = ",\"timestamp\":\"2025-01-15T10:00:01Z\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Hi!\"}],\"model\":\"claude-sonnet-4\",\"stop_reason\":\"end_turn\",\"usage\":{\"input_tokens\":10,\"output_tokens\":5,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n";
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        file.write_all(rest.as_bytes()).unwrap();
+        drop(file);
+
+        let (completed_msgs, _, _) =
+            read_session_incremental(path.to_str().unwrap(), offset).unwrap();
+        assert_eq!(
+            completed_msgs.len(),
+            1,
+            "completed line should produce a message"
+        );
 
         std::fs::remove_dir_all(&tmp).ok();
     }
