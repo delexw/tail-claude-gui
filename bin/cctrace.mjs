@@ -108,11 +108,19 @@ switch (mode) {
   }
 
   case "--tui": {
-    // Start backend headless, then launch TUI once API is ready
-    const backend = spawn("npx", ["tauri", "dev", "--", "--", "--headless"], {
-      stdio: "inherit",
-      cwd: root,
-    });
+    // If the backend (port 11423) is already running, connect to it instead
+    // of starting a new headless instance.
+    const backendRunning = await isPortInUse(11423);
+    let backend = null;
+
+    if (backendRunning) {
+      console.log("Connecting to existing backend on http://127.0.0.1:11423");
+    } else {
+      backend = spawn("npx", ["tauri", "dev", "--", "--", "--headless"], {
+        stdio: "inherit",
+        cwd: root,
+      });
+    }
 
     // Build TUI if needed, wait for backend, then start TUI
     execSync("npm run build", { stdio: "inherit", cwd: resolve(root, "tui") });
@@ -127,10 +135,10 @@ switch (mode) {
     });
 
     tui.on("exit", (code) => {
-      backend.kill();
+      if (backend) backend.kill();
       process.exit(code ?? 0);
     });
-    backend.on("exit", () => tui.kill());
+    if (backend) backend.on("exit", () => tui.kill());
     break;
   }
 }

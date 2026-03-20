@@ -15,8 +15,27 @@ pub fn run() {
     let web_only = args.iter().any(|a| a == "--web");
     let headless = args.iter().any(|a| a == "--headless");
     let no_open = args.iter().any(|a| a == "--no-open");
+    let desktop = !web_only && !headless;
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    // Single-instance enforcement for the desktop window only.
+    // When a second instance is launched while the app is already running
+    // (e.g. hidden to the dock), show the existing window and exit the duplicate.
+    if desktop {
+        builder = builder.plugin(
+            tauri_plugin_single_instance::Builder::new()
+                .callback(|app, _args, _cwd| {
+                    if let Some(w) = app.get_webview_window("main") {
+                        let _ = w.show();
+                        let _ = w.set_focus();
+                    }
+                })
+                .build(),
+        );
+    }
+
+    builder
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .manage(state::AppState::new())
