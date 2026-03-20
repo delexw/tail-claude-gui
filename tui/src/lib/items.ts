@@ -1,5 +1,20 @@
 import type { DisplayItem } from "../api.js";
-import { truncate } from "./format.js";
+
+/** Returns a compact summary of a JSON string: `{key1, key2, …}` or `[N items]`. */
+function jsonShapeSummary(text: string): string | null {
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) return `[${parsed.length} items]`;
+    if (typeof parsed === "object" && parsed !== null) {
+      const keys = Object.keys(parsed);
+      const shown = keys.slice(0, 4).join(", ");
+      return `{${shown}${keys.length > 4 ? ", …" : ""}}`;
+    }
+  } catch {
+    // not JSON
+  }
+  return null;
+}
 import {
   IconThinking,
   IconOutput,
@@ -58,19 +73,16 @@ export function getItemSummary(item: DisplayItem): string {
     case "Subagent":
       return item.subagent_desc || "";
     case "TeammateMessage":
-      return item.text ? item.text.slice(0, 100) : "";
+      return item.text || "";
     case "Thinking":
-      return item.text
-        ? item.text.slice(0, 80) + (item.text.length > 80 ? "…" : "")
-        : "Content not recorded";
+      return item.text || "Content not recorded";
     case "Output":
-      return item.text ? item.text.slice(0, 80) + (item.text.length > 80 ? "…" : "") : "";
+      if (!item.text) return "";
+      return jsonShapeSummary(item.text) ?? item.text;
     case "HookEvent":
       return item.hook_name
-        ? `${item.hook_name}${item.hook_command ? ": " + truncate(item.hook_command, 60) : ""}`
-        : item.hook_command
-          ? truncate(item.hook_command, 80)
-          : "";
+        ? `${item.hook_name}${item.hook_command ? ": " + item.hook_command : ""}`
+        : item.hook_command || "";
     default:
       return "";
   }

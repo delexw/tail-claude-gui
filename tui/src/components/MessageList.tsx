@@ -74,10 +74,7 @@ export function MessageList({ messages, selectedIndex, expandedSet, ongoing }: M
           );
         }
 
-        const bodyWidth = contentWidth - 10; // outer paddingX(2) + border(2) + inner paddingX(4) + accent bar(2)
-        const contentPreview = isExpanded
-          ? msg.content
-          : truncate(firstLine(msg.content), bodyWidth);
+        const contentPreview = isExpanded ? msg.content : firstLine(msg.content);
         const borderClr = isSelected ? colors.accent : getRoleBorderColor(msg.role, msg.is_error);
 
         return (
@@ -137,7 +134,7 @@ export function MessageList({ messages, selectedIndex, expandedSet, ongoing }: M
                     </Text>
                     <Box paddingLeft={1}>
                       <Text
-                        wrap="truncate"
+                        wrap="wrap"
                         color={
                           item.team_color
                             ? getTeamColor(item.team_color)
@@ -146,11 +143,11 @@ export function MessageList({ messages, selectedIndex, expandedSet, ongoing }: M
                       >
                         {getItemIcon(item)} {getItemName(item)}
                         {item.tool_summary
-                          ? ` — ${truncate(item.tool_summary, bodyWidth - 20)}`
+                          ? ` — ${item.tool_summary}`
                           : item.subagent_desc
-                            ? ` — ${truncate(item.subagent_desc, bodyWidth - 20)}`
+                            ? ` — ${item.subagent_desc}`
                             : item.text && item.item_type !== "ToolCall"
-                              ? ` ${truncate(item.text, bodyWidth - 20)}`
+                              ? ` ${item.text}`
                               : ""}
                         {item.subagent_ongoing ? ` ${IconOngoingDot}` : ""}
                         {item.subagent_messages.length > 0

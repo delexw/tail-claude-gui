@@ -3,7 +3,6 @@ import type { DisplayMessage, DisplayItem } from "../api.js";
 import {
   formatDuration,
   formatTokens,
-  truncate,
   roleColor,
   roleIcon,
   formatJson,
@@ -26,26 +25,13 @@ import {
 /** Max content width — matches Go TUI's maxContentWidth. */
 const MAX_CONTENT_WIDTH = 160;
 
-/** Limit text to maxLines while preserving newlines. Appends "…" if truncated. */
-function limitLines(text: string, maxLines: number): string {
-  const lines = text.split("\n");
-  if (lines.length <= maxLines) return text;
-  return lines.slice(0, maxLines).join("\n") + "\n…(" + (lines.length - maxLines) + " more lines)";
-}
-
-/** Clamp each line to maxWidth so bordered boxes don't overflow the terminal. */
-function clampLines(text: string, maxWidth: number): string {
-  return text
-    .split("\n")
-    .map((line) => (line.length > maxWidth ? line.slice(0, maxWidth - 1) + "…" : line))
-    .join("\n");
-}
-
 interface DetailViewProps {
   message: DisplayMessage;
   selectedItem: number;
   expandedItems: Set<number>;
   ongoing: boolean;
+  bodyScrollOffset: number;
+  headerScrollOffset: number;
   depth?: number;
 }
 
@@ -63,6 +49,8 @@ export function DetailView({
   selectedItem,
   expandedItems,
   ongoing,
+  bodyScrollOffset,
+  headerScrollOffset,
   depth = 0,
 }: DetailViewProps) {
   const cols = process.stdout.columns || 80;
@@ -80,8 +68,13 @@ export function DetailView({
 
   return (
     <Box flexDirection="column" paddingX={1}>
-      {/* Message header — round border (matches Go TUI's RoundedBorder) */}
-      <Box flexDirection="column" borderStyle="round" borderColor={colors.border} paddingX={2}>
+      {/* Message header — accent border when user has scrolled into the header content */}
+      <Box
+        flexDirection="column"
+        borderStyle="round"
+        borderColor={headerScrollOffset > 0 ? colors.accent : colors.border}
+        paddingX={2}
+      >
         <Box gap={1}>
           {depth > 0 ? <Text dimColor>{IconSelected2.repeat(depth)} </Text> : null}
           <Text bold color={roleColor(message.role)}>
@@ -94,10 +87,8 @@ export function DetailView({
           <StatsBar stats={stats} />
           {ongoing ? <BrailleSpinner /> : null}
         </Box>
-        {items.length > 0 ? (
-          <Text dimColor wrap="truncate">
-            {truncate(message.content, contentWidth - 10)}
-          </Text>
+        {items.length > 0 && message.content ? (
+          <HeaderContent content={message.content} scrollOffset={headerScrollOffset} />
         ) : null}
       </Box>
 
@@ -116,9 +107,6 @@ export function DetailView({
             const hasAgent = item.subagent_messages.length > 0;
             const teamClr = item.team_color ? getTeamColor(item.team_color) : undefined;
             const accentClr = hasAgent && teamClr ? teamClr : clr;
-
-            // Go TUI format: {cursor} {icon} {name:<maxNameLen} {summary}  {tokens:>9} {duration:<5}
-            const summaryMaxLen = contentWidth - maxNameLen - 30; // leave room for tokens + duration
 
             return (
               <Box
@@ -143,7 +131,7 @@ export function DetailView({
                     {getItemSummary(item) ? (
                       <Text dimColor wrap="truncate">
                         {" "}
-                        {"\u2014"} {truncate(getItemSummary(item), summaryMaxLen)}
+                        {"\u2014"} {getItemSummary(item)}
                       </Text>
                     ) : null}
                     {/* Spacer */}
@@ -164,8 +152,14 @@ export function DetailView({
                     ) : null}
                   </Box>
 
-                  {/* Expanded body */}
-                  {isExpanded && <DetailItemBody item={item} cols={contentWidth} />}
+                  {/* Expanded body — only selected item gets the scroll offset */}
+                  {isExpanded && (
+                    <DetailItemBody
+                      item={item}
+                      cols={contentWidth}
+                      scrollOffset={isSelected ? bodyScrollOffset : 0}
+                    />
+                  )}
                 </Box>
               </Box>
             );
@@ -177,103 +171,159 @@ export function DetailView({
 }
 
 /**
+ * Compact header preview of message.content.
+ * Height scales with terminal: ~1/3 of available rows after chrome.
+ * Each line is rendered individually with wrap="truncate" so the box height
+ * stays fixed regardless of line length.
+ */
+function HeaderContent({ content, scrollOffset }: { content: string; scrollOffset: number }) {
+  const rows = process.stdout.rows || 24;
+  // InfoBar(3) + KeybindBar(2) + header borders/stats(4) + items(~6) = ~15 chrome rows
+  const maxLines = Math.max(5, Math.floor((rows - 15) / 3));
+  const lines = content.split("\n").filter((l) => l.trim() !== "");
+  const clamped = Math.min(scrollOffset, Math.max(0, lines.length - maxLines));
+  const visible = lines.slice(clamped, clamped + maxLines);
+  const above = clamped;
+  const below = Math.max(0, lines.length - clamped - maxLines);
+  return (
+    <Box flexDirection="column">
+      {above > 0 ? (
+        <Text dimColor>
+          ↑ {above} line{above !== 1 ? "s" : ""} above
+        </Text>
+      ) : null}
+      {visible.map((line, i) => (
+        // eslint-disable-next-line react/no-array-index-key
+        <Text key={`${clamped}-${i}`} dimColor wrap="truncate">
+          {line}
+        </Text>
+      ))}
+      {below > 0 ? (
+        <Text dimColor>
+          ↓ {below} more line{below !== 1 ? "s" : ""} · u/d to scroll
+        </Text>
+      ) : null}
+    </Box>
+  );
+}
+
+// InfoBar(3) + KeybindBar(3) + header box(5) + item rows(~4) + indicators(2) = ~17
+const BODY_CHROME_ROWS = 17;
+
+/**
+ * Returns the slice of `text` visible at `scrollOffset` within the available
+ * terminal height, plus above/below indicators.
+ */
+function viewportText(
+  text: string,
+  scrollOffset: number,
+  rows: number,
+): { visible: string; above: number; below: number } {
+  const lines = text.split("\n");
+  const maxLines = Math.max(5, rows - BODY_CHROME_ROWS);
+  const clamped = Math.min(scrollOffset, Math.max(0, lines.length - maxLines));
+  const visible = lines.slice(clamped, clamped + maxLines).join("\n");
+  const above = clamped;
+  const below = Math.max(0, lines.length - clamped - maxLines);
+  return { visible, above, below };
+}
+
+/**
  * Expanded item body — matches Go TUI: 4-space indent, plain text, no bordered boxes.
  * ToolCall Input/Result separated by dashed line. Section headers are bold+dim labels.
  */
-const MAX_BODY_LINES = 40;
-// Left accent bar(1) + paddingLeft(1) + body paddingLeft(4) + safety margin(4) = 10
-const BODY_INDENT_OVERHEAD = 10;
+function DetailItemBody({
+  item,
+  cols,
+  scrollOffset,
+}: {
+  item: DisplayItem;
+  cols: number;
+  scrollOffset: number;
+}) {
+  const rows = process.stdout.rows || 24;
+  const hrule = IconHRule.repeat(Math.min(cols, 40));
 
-function DetailItemBody({ item, cols }: { item: DisplayItem; cols: number }) {
-  const wrapWidth = Math.max(cols - BODY_INDENT_OVERHEAD, 20);
-  const clamp = (text: string) => clampLines(limitLines(text, MAX_BODY_LINES), wrapWidth);
-  const hrule = IconHRule.repeat(Math.min(wrapWidth, 40));
+  /** Render a scrollable text block with above/below indicators. */
+  function ScrollBlock({
+    text,
+    color,
+    dimColor,
+  }: {
+    text: string;
+    color?: string;
+    dimColor?: boolean;
+  }) {
+    const { visible, above, below } = viewportText(text, scrollOffset, rows);
+    return (
+      <Box flexDirection="column">
+        {above > 0 ? (
+          <Text dimColor>
+            ↑ {above} line{above !== 1 ? "s" : ""} above (u to scroll up)
+          </Text>
+        ) : null}
+        <Text color={color} dimColor={dimColor} wrap="wrap">
+          {visible}
+        </Text>
+        {below > 0 ? (
+          <Text dimColor>
+            ↓ {below} more line{below !== 1 ? "s" : ""} (d to scroll down)
+          </Text>
+        ) : null}
+      </Box>
+    );
+  }
 
   switch (item.item_type) {
     case "Thinking":
       return (
         <Box flexDirection="column" paddingLeft={4}>
-          <Text color={colors.itemThinking} wrap="truncate">
-            {clamp(item.text || "Thinking content is not recorded in session logs.")}
-          </Text>
+          <ScrollBlock
+            text={item.text || "Thinking content is not recorded in session logs."}
+            color={colors.itemThinking}
+          />
         </Box>
       );
     case "Output":
       return (
         <Box flexDirection="column" paddingLeft={4}>
-          <Text wrap="truncate">{clamp(item.text)}</Text>
+          <ScrollBlock text={formatJson(item.text)} />
         </Box>
       );
-    case "ToolCall":
+    case "ToolCall": {
+      // Concatenate input + hrule + result into one scrollable block
+      const parts: string[] = [];
+      if (item.tool_input) {
+        parts.push("Input:");
+        parts.push(formatJson(item.tool_input));
+      }
+      if (item.tool_input && item.tool_result) parts.push(hrule);
+      if (item.tool_result) {
+        parts.push(item.tool_error ? "Error:" : "Result:");
+        parts.push(formatJson(item.tool_result));
+      }
       return (
         <Box flexDirection="column" paddingLeft={4}>
-          {item.tool_input && (
-            <Box flexDirection="column">
-              <Text bold color={colors.textSecondary}>
-                Input:
-              </Text>
-              <Text dimColor wrap="truncate">
-                {clamp(formatJson(item.tool_input))}
-              </Text>
-            </Box>
-          )}
-          {item.tool_input && item.tool_result && <Text color={colors.textMuted}>{hrule}</Text>}
-          {item.tool_result && (
-            <Box flexDirection="column">
-              <Text bold color={item.tool_error ? colors.error : colors.textSecondary}>
-                {item.tool_error ? "Error:" : "Result:"}
-              </Text>
-              <Text color={item.tool_error ? colors.error : undefined} wrap="truncate">
-                {clamp(item.tool_result)}
-              </Text>
-            </Box>
-          )}
+          <ScrollBlock text={parts.join("\n")} color={item.tool_error ? colors.error : undefined} />
         </Box>
       );
-    case "Subagent":
+    }
+    case "Subagent": {
+      const parts: string[] = [];
+      if (item.agent_id) parts.push(`id: ${item.agent_id}`);
+      if (item.subagent_desc) parts.push(`description: ${item.subagent_desc}`);
+      if (item.subagent_prompt) parts.push(`prompt:\n${item.subagent_prompt}`);
+      if (item.text) parts.push(`${hrule}\nResult:\n${item.text}`);
       return (
         <Box flexDirection="column" paddingLeft={4}>
-          {item.agent_id && (
-            <Box gap={1}>
-              <Text color={colors.textMuted} bold>
-                id:
-              </Text>
-              <Text dimColor>{item.agent_id}</Text>
-            </Box>
-          )}
-          {item.subagent_desc && (
-            <Box gap={1}>
-              <Text color={colors.textMuted} bold>
-                description:
-              </Text>
-              <Text wrap="truncate">{truncate(item.subagent_desc, wrapWidth - 15)}</Text>
-            </Box>
-          )}
-          {item.subagent_prompt && (
-            <Box flexDirection="column">
-              <Text color={colors.textMuted} bold>
-                prompt:
-              </Text>
-              <Text dimColor wrap="truncate">
-                {clamp(item.subagent_prompt)}
-              </Text>
-            </Box>
-          )}
-          {item.text && (
-            <Box flexDirection="column">
-              <Text color={colors.textMuted}>{hrule}</Text>
-              <Text bold color={colors.textSecondary}>
-                Result:
-              </Text>
-              <Text wrap="truncate">{clamp(item.text)}</Text>
-            </Box>
-          )}
+          <ScrollBlock text={parts.join("\n")} />
         </Box>
       );
+    }
     case "TeammateMessage":
       return (
         <Box flexDirection="column" paddingLeft={4}>
-          <Text wrap="truncate">{clamp(item.text)}</Text>
+          <ScrollBlock text={item.text} />
         </Box>
       );
     case "HookEvent":
@@ -300,7 +350,7 @@ function DetailItemBody({ item, cols }: { item: DisplayItem; cols: number }) {
     default:
       return (
         <Box flexDirection="column" paddingLeft={4}>
-          <Text wrap="truncate">{clamp(item.text)}</Text>
+          <ScrollBlock text={item.text} />
         </Box>
       );
   }

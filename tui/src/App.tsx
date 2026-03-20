@@ -112,6 +112,8 @@ export function App() {
   const [selectedMessage, setSelectedMessage] = useState(0);
   const [selectedItem, setSelectedItem] = useState(0);
   const [debugSelected, setDebugSelected] = useState(0);
+  const [bodyScrollOffset, setBodyScrollOffset] = useState(0);
+  const [headerScrollOffset, setHeaderScrollOffset] = useState(0);
 
   // Subagent drill-down: when entering a subagent item, we show its
   // subagent_messages as a message list. The user can then Enter a message
@@ -271,69 +273,108 @@ export function App() {
           const msgs = subagentItem.subagent_messages;
           if (input === "j" || key.downArrow) {
             setSubagentMsgIdx((i) => Math.min(i + 1, msgs.length - 1));
+            setBodyScrollOffset(0);
           } else if (input === "k" || key.upArrow) {
             setSubagentMsgIdx((i) => Math.max(i - 1, 0));
+            setBodyScrollOffset(0);
           } else if (key.return) {
             // Enter a message to see its items
             if (msgs[subagentMsgIdx]) {
               setSubagentDetailMsg(msgs[subagentMsgIdx]);
               setSelectedItem(0);
               expandedItems.clear();
+              setBodyScrollOffset(0);
             }
           } else if (input === "q" || key.escape) {
             setSubagentItem(null);
             setSubagentMsgIdx(0);
+            setBodyScrollOffset(0);
           }
         } else if (subagentDetailMsg) {
           // Viewing items of a subagent message
           const items = subagentDetailMsg.items || [];
+          const selectedExpanded = expandedItems.set.has(selectedItem);
           if (input === "j" || key.downArrow) {
             setSelectedItem((i) => Math.min(i + 1, items.length - 1));
+            setBodyScrollOffset(0);
+            setHeaderScrollOffset(0);
           } else if (input === "k" || key.upArrow) {
             setSelectedItem((i) => Math.max(i - 1, 0));
+            setBodyScrollOffset(0);
+            setHeaderScrollOffset(0);
+          } else if (input === "u") {
+            if (selectedExpanded) setBodyScrollOffset((o) => Math.max(0, o - 5));
+            else setHeaderScrollOffset((o) => Math.max(0, o - 5));
+          } else if (input === "d") {
+            if (selectedExpanded) setBodyScrollOffset((o) => o + 5);
+            else setHeaderScrollOffset((o) => o + 5);
           } else if (key.tab || key.return) {
             const item = items[selectedItem];
             if (key.return && item?.subagent_messages?.length > 0) {
-              // Nested subagent — drill deeper
               setSubagentItem(item);
               setSubagentDetailMsg(null);
               setSubagentMsgIdx(0);
+              setBodyScrollOffset(0);
+              setHeaderScrollOffset(0);
             } else {
               expandedItems.toggle(selectedItem);
+              setBodyScrollOffset(0);
             }
           } else if (input === "e") {
             expandedItems.addAll(items.map((_it, i) => i));
+            setBodyScrollOffset(0);
           } else if (input === "c") {
             expandedItems.clear();
+            setBodyScrollOffset(0);
           } else if (input === "q" || key.escape) {
-            // Back to subagent message list
             setSubagentDetailMsg(null);
             setSubagentMsgIdx(0);
+            setBodyScrollOffset(0);
+            setHeaderScrollOffset(0);
           }
         } else {
           // Top-level detail view (main message items)
           const items = messages[selectedMessage]?.items || [];
+          const selectedExpanded = expandedItems.set.has(selectedItem);
           if (input === "j" || key.downArrow) {
             setSelectedItem((i) => Math.min(i + 1, items.length - 1));
+            setBodyScrollOffset(0);
+            setHeaderScrollOffset(0);
           } else if (input === "k" || key.upArrow) {
             setSelectedItem((i) => Math.max(i - 1, 0));
+            setBodyScrollOffset(0);
+            setHeaderScrollOffset(0);
+          } else if (input === "u") {
+            if (selectedExpanded) setBodyScrollOffset((o) => Math.max(0, o - 5));
+            else setHeaderScrollOffset((o) => Math.max(0, o - 5));
+          } else if (input === "d") {
+            if (selectedExpanded) setBodyScrollOffset((o) => o + 5);
+            else setHeaderScrollOffset((o) => o + 5);
           } else if (key.tab) {
             expandedItems.toggle(selectedItem);
+            setBodyScrollOffset(0);
           } else if (key.return) {
             const item = items[selectedItem];
             if (item?.subagent_messages?.length > 0) {
               setSubagentItem(item);
               setSubagentMsgIdx(0);
               setSubagentDetailMsg(null);
+              setBodyScrollOffset(0);
+              setHeaderScrollOffset(0);
             } else {
               expandedItems.toggle(selectedItem);
+              setBodyScrollOffset(0);
             }
           } else if (input === "e") {
             expandedItems.addAll(items.map((_it, i) => i));
+            setBodyScrollOffset(0);
           } else if (input === "c") {
             expandedItems.clear();
+            setBodyScrollOffset(0);
           } else if (input === "q" || key.escape) {
             setView("list");
+            setBodyScrollOffset(0);
+            setHeaderScrollOffset(0);
           }
         }
         break;
@@ -427,6 +468,8 @@ export function App() {
               selectedItem={selectedItem}
               expandedItems={expandedItems.set}
               ongoing={false}
+              bodyScrollOffset={bodyScrollOffset}
+              headerScrollOffset={headerScrollOffset}
               depth={1}
             />
           );
@@ -439,6 +482,8 @@ export function App() {
               selectedItem={selectedItem}
               expandedItems={expandedItems.set}
               ongoing={ongoing && selectedMessage === messages.length - 1}
+              bodyScrollOffset={bodyScrollOffset}
+              headerScrollOffset={headerScrollOffset}
             />
           );
         }
