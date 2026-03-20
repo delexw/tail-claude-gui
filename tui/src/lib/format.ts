@@ -1,11 +1,15 @@
 /** TUI-specific formatting utilities. Shared format functions come from shared/format.ts. */
 
+import { marked } from "marked";
+import { markedTerminal } from "marked-terminal";
+import { transformInlineJson } from "../../../shared/format.js";
 export {
   formatTokens,
   formatCost,
   formatDuration,
   truncate,
   timeAgo,
+  transformInlineJson,
 } from "../../../shared/format.js";
 
 import { colors, getModelColor as _getModelColor } from "./theme.js";
@@ -72,4 +76,40 @@ export function formatJson(input: string): string {
   } catch {
     return input;
   }
+}
+
+/**
+ * Detects bare JSON objects/arrays in plain text and pretty-prints them
+ * in-place (no markdown fences — TUI renders plain text, not markdown).
+ */
+export function prettyInlineJson(text: string): string {
+  return transformInlineJson(text, (prefix, formatted) =>
+    prefix ? prefix + "\n" + formatted : formatted,
+  );
+}
+
+// Initialise marked with the terminal renderer once at module load.
+marked.use(
+  markedTerminal({
+    // Keep reflowed text — do not hard-wrap at 80 chars.
+    width: 0,
+    // Paragraph spacing: single blank line.
+    paragraph: (text: string) => text + "\n",
+  }),
+);
+
+/**
+ * Render markdown text for terminal display.
+ * Bare JSON blobs are fenced first so they render as code blocks.
+ * Returns a string with ANSI escape codes for bold/italic/colour.
+ */
+export function renderMarkdown(text: string): string {
+  // Fence bare JSON before passing to marked so it renders as a code block.
+  const fenced = transformInlineJson(
+    text,
+    (prefix, formatted) => (prefix ? prefix + "\n" : "") + "```json\n" + formatted + "\n```",
+  );
+  const result = marked(fenced);
+  // marked returns string | Promise<string>; it is synchronous here.
+  return (typeof result === "string" ? result : text).trimEnd();
 }

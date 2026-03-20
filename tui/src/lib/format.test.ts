@@ -1,5 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { shortModel, modelColor, roleColor, roleIcon, firstLine, formatJson } from "./format";
+import {
+  shortModel,
+  modelColor,
+  roleColor,
+  roleIcon,
+  firstLine,
+  formatJson,
+  prettyInlineJson,
+  renderMarkdown,
+} from "./format";
 import { colors } from "./theme";
 import { IconClaude, IconUser, IconSystem } from "./icons";
 
@@ -69,5 +78,67 @@ describe("formatJson", () => {
 
   it("returns original for invalid JSON", () => {
     expect(formatJson("not json")).toBe("not json");
+  });
+});
+
+describe("prettyInlineJson", () => {
+  it("pretty-prints bare JSON object at end of line", () => {
+    const input = 'Let me write the output files. {"layers":[{"key":"A"}],"skipped":[]}';
+    const result = prettyInlineJson(input);
+    expect(result).toContain('"layers"');
+    expect(result).toContain("Let me write the output files.");
+    expect(result).not.toContain("```");
+  });
+
+  it("pretty-prints a bare JSON array", () => {
+    const input = 'Results: [{"id":1},{"id":2}]';
+    const result = prettyInlineJson(input);
+    expect(result).toContain('"id"');
+    expect(result).not.toContain("```");
+  });
+
+  it("leaves plain text unchanged", () => {
+    expect(prettyInlineJson("Hello world")).toBe("Hello world");
+  });
+
+  it("does not modify content already in a code fence", () => {
+    const input = '```json\n{"a":1}\n```';
+    expect(prettyInlineJson(input)).toBe(input);
+  });
+
+  it("does not wrap trivially small JSON", () => {
+    expect(prettyInlineJson('value: {"a":1}')).toBe('value: {"a":1}');
+  });
+});
+
+describe("renderMarkdown", () => {
+  it("strips markdown syntax and returns text content", () => {
+    const result = renderMarkdown("**bold** and *italic* text");
+    expect(result).toContain("bold");
+    expect(result).toContain("italic");
+    expect(result).toContain("text");
+  });
+
+  it("renders headers", () => {
+    const result = renderMarkdown("# Title\n\nsome content");
+    expect(result).toContain("Title");
+    expect(result).toContain("some content");
+  });
+
+  it("renders bullet lists", () => {
+    const result = renderMarkdown("- item one\n- item two");
+    expect(result).toContain("item one");
+    expect(result).toContain("item two");
+  });
+
+  it("handles plain text unchanged in content", () => {
+    const result = renderMarkdown("just plain text here");
+    expect(result).toContain("just plain text here");
+  });
+
+  it("fences and renders inline JSON as a code block", () => {
+    const result = renderMarkdown('Output: {"layers":[{"key":"A"}],"skipped":[]}');
+    expect(result).toContain("Output:");
+    expect(result).toContain('"layers"');
   });
 });

@@ -7,6 +7,7 @@ import {
   roleColor,
   roleIcon,
   formatJson,
+  renderMarkdown,
 } from "../lib/format.js";
 import { colors, getItemColor, getTeamColor } from "../lib/theme.js";
 import { getItemIcon, getItemName, getItemSummary } from "../lib/items.js";
@@ -103,7 +104,7 @@ export function DetailView({
       {/* Full content when no items */}
       {items.length === 0 ? (
         <Box paddingX={2} flexDirection="column">
-          <Text wrap="wrap">{message.content}</Text>
+          <Text wrap="wrap">{renderMarkdown(message.content)}</Text>
         </Box>
       ) : (
         <Box flexDirection="column" paddingTop={1}>

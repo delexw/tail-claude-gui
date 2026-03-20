@@ -51,6 +51,78 @@ export function shortPath(cwd: string): string {
   return parts[parts.length - 1] ?? cwd;
 }
 
+const MIN_JSON_TRANSFORM_LENGTH = 15;
+
+/**
+ * Scans each line of text for bare JSON objects/arrays (not already inside a
+ * code fence) and replaces them using the provided wrap callback.
+ *
+ * wrap(prefix, formattedJson) → replacement line
+ *   prefix  — text before the JSON blob on the same line (may be empty)
+ *   formattedJson — JSON.stringify(parsed, null, 2)
+ *
+ * Used by both platforms:
+ *   - GUI wraps in ```json fences for ReactMarkdown
+ *   - TUI wraps as indented plain text
+ */
+export function transformInlineJson(
+  text: string,
+  wrap: (prefix: string, formatted: string) => string,
+): string {
+  const lines = text.split("\n");
+  let inCodeBlock = false;
+  const result: string[] = [];
+
+  for (const line of lines) {
+    if (line.trimStart().startsWith("```")) {
+      inCodeBlock = !inCodeBlock;
+      result.push(line);
+      continue;
+    }
+
+    if (inCodeBlock) {
+      result.push(line);
+      continue;
+    }
+
+    const trimmed = line.trim();
+    if (!trimmed.includes("{") && !trimmed.includes("[")) {
+      result.push(line);
+      continue;
+    }
+
+    let transformed = false;
+    for (let i = 0; i < trimmed.length; i++) {
+      const ch = trimmed[i];
+      if (ch !== "{" && ch !== "[") continue;
+      const candidate = trimmed.slice(i);
+      if (candidate.length < MIN_JSON_TRANSFORM_LENGTH) break;
+      try {
+        const parsed = JSON.parse(candidate);
+        if (
+          parsed !== null &&
+          typeof parsed === "object" &&
+          (Array.isArray(parsed) ? parsed.length > 0 : Object.keys(parsed).length > 0)
+        ) {
+          const prefix = trimmed.slice(0, i).trimEnd();
+          const formatted = JSON.stringify(parsed, null, 2);
+          result.push(wrap(prefix, formatted));
+          transformed = true;
+          break;
+        }
+      } catch {
+        // not valid JSON from this position — try next {/[ character
+      }
+    }
+
+    if (!transformed) {
+      result.push(line);
+    }
+  }
+
+  return result.join("\n");
+}
+
 /** Relative time: "3m ago", "2h ago", "5d ago" */
 export function timeAgo(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();

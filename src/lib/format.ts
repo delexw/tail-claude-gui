@@ -2,7 +2,8 @@
 // Pure shared utilities are re-exported from shared/format.ts.
 
 import type { DisplayMessage } from "../types";
-export { formatTokens } from "../../shared/format";
+import { transformInlineJson } from "../../shared/format";
+export { formatTokens, transformInlineJson } from "../../shared/format";
 
 /**
  * Turns "claude-opus-4-6" into "opus4.6".
@@ -202,69 +203,13 @@ export function formatJson(input: string): string {
   }
 }
 
-// Minimum character length for a JSON blob to be fenced. Avoids wrapping
-// trivially small inline values like {"ok":true}.
-const MIN_JSON_FENCE_LENGTH = 15;
-
 /**
- * Detects bare JSON objects/arrays in markdown text and wraps them in
- * ```json code fences so ReactMarkdown renders them formatted rather than
- * as a wall of minified text. Skips content already inside code blocks.
- *
- * Handles the pattern where Claude writes: "Let me write the output. {json}"
+ * Wraps bare JSON objects/arrays in ```json code fences for ReactMarkdown.
+ * Delegates detection to the shared transformInlineJson utility.
  */
 export function fenceInlineJson(text: string): string {
-  const lines = text.split("\n");
-  let inCodeBlock = false;
-  const result: string[] = [];
-
-  for (const line of lines) {
-    if (line.trimStart().startsWith("```")) {
-      inCodeBlock = !inCodeBlock;
-      result.push(line);
-      continue;
-    }
-
-    if (inCodeBlock) {
-      result.push(line);
-      continue;
-    }
-
-    const trimmed = line.trim();
-    if (!trimmed.includes("{") && !trimmed.includes("[")) {
-      result.push(line);
-      continue;
-    }
-
-    let fenced = false;
-    for (let i = 0; i < trimmed.length; i++) {
-      const ch = trimmed[i];
-      if (ch !== "{" && ch !== "[") continue;
-      const candidate = trimmed.slice(i);
-      if (candidate.length < MIN_JSON_FENCE_LENGTH) break;
-      try {
-        const parsed = JSON.parse(candidate);
-        if (
-          parsed !== null &&
-          typeof parsed === "object" &&
-          (Array.isArray(parsed) ? parsed.length > 0 : Object.keys(parsed).length > 0)
-        ) {
-          const prefix = trimmed.slice(0, i).trimEnd();
-          const formatted = JSON.stringify(parsed, null, 2);
-          const fencedBlock = "```json\n" + formatted + "\n```";
-          result.push(prefix ? prefix + "\n" + fencedBlock : fencedBlock);
-          fenced = true;
-          break;
-        }
-      } catch {
-        // not valid JSON from this position — try next {/[ character
-      }
-    }
-
-    if (!fenced) {
-      result.push(line);
-    }
-  }
-
-  return result.join("\n");
+  return transformInlineJson(text, (prefix, formatted) => {
+    const fence = "```json\n" + formatted + "\n```";
+    return prefix ? prefix + "\n" + fence : fence;
+  });
 }
