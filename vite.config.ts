@@ -7,8 +7,10 @@ export default defineConfig(async () => ({
   plugins: [react()],
   clearScreen: false,
   server: {
-    port: 1420,
-    strictPort: true,
+    // VITE_PORT allows headless/TUI mode to use a different port to avoid
+    // conflicting with an already-running web/desktop Vite instance.
+    port: process.env.VITE_PORT ? parseInt(process.env.VITE_PORT) : 1420,
+    strictPort: !process.env.VITE_PORT,
     host: host || false,
     hmr: host
       ? {

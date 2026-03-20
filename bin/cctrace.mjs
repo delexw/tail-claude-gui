@@ -141,17 +141,23 @@ switch (mode) {
     if (backendRunning) {
       console.log("Connecting to existing backend on http://127.0.0.1:11423");
     } else {
+      // If port 1420 is already occupied by another Vite/web instance, pass a
+      // different port via VITE_PORT so the headless Vite doesn't conflict.
+      // The headless backend doesn't serve a browser UI, so any port is fine.
+      const vitePort = (await isPortInUse(1420)) ? "0" : "";
       backend = spawn("npx", ["tauri", "dev", "--", "--", "--headless"], {
         stdio: "inherit",
         cwd: root,
+        env: { ...process.env, ...(vitePort ? { VITE_PORT: vitePort } : {}) },
       });
     }
 
     // Build TUI if needed, wait for backend, then start TUI
     execSync("npm run build", { stdio: "inherit", cwd: resolve(root, "tui") });
+    // wait-for-backend.mjs lives in bin/, not tui/
     execSync("node wait-for-backend.mjs", {
       stdio: "inherit",
-      cwd: resolve(root, "tui"),
+      cwd: resolve(root, "bin"),
     });
 
     const tui = spawn("node", ["dist/tui/src/cli.js"], {
