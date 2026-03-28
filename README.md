@@ -6,7 +6,7 @@
 
 A desktop + web viewer for Claude Code session JSONL files. Built with [Tauri v2](https://v2.tauri.app/) (Rust backend + React frontend).
 
-Reads session logs from `~/.claude/` and renders them as a scrollable conversation with expandable tool calls, token counts, and live tailing. Works as a **native desktop app** (macOS, Linux, Windows) or as a **web app** in any browser. Inspired by [tail-claude](https://github.com/kylesnowschwartz/tail-claude).
+Reads session logs from `~/.claude/` and renders them as a scrollable conversation with expandable tool calls, token counts, and live tailing. Works as a **native desktop app** (macOS, Linux, Windows) or as a **web app** in any browser.
 
 <p align="center">
   <img src="demo.gif" alt="Demo" />
@@ -161,9 +161,6 @@ git push origin v0.4.0
 
 This creates a draft release with macOS, Linux, and Windows artifacts attached. Review and publish it from the [Releases](https://github.com/delexw/claude-code-trace/releases) page.
 
-## Attribution
-
-Parsing heuristics inspired by [tail-claude](https://github.com/kylesnowschwartz/tail-claude) and [claude-devtools](https://github.com/matt1398/claude-devtools).
 
 ## License
 
