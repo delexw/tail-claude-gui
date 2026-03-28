@@ -49,7 +49,9 @@ function isPortInUse(port) {
 async function waitForPort(port, timeoutMs = 30_000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
+    // eslint-disable-next-line no-await-in-loop -- sequential polling loop; Promise.all() is not applicable
     if (await isPortInUse(port)) return;
+    // eslint-disable-next-line no-await-in-loop -- sequential polling loop; Promise.all() is not applicable
     await new Promise((r) => setTimeout(r, 300));
   }
 }

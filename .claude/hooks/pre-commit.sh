@@ -22,7 +22,7 @@ FMT_OUTPUT=$(npm run fmt:check 2>&1) || {
 # --- Lint check ---
 LINT_OUTPUT=$(npm run lint 2>&1)
 LINT_EXIT=$?
-if [ $LINT_EXIT -ne 0 ] || echo "$LINT_OUTPUT" | grep -q " warnings\? "; then
+if [ $LINT_EXIT -ne 0 ] || echo "$LINT_OUTPUT" | grep -qE "[1-9][0-9]* warnings? "; then
   if [ -n "$ERRORS" ]; then
     ERRORS="$ERRORS\n\nLint issues:\n$LINT_OUTPUT"
   else

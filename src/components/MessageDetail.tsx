@@ -386,24 +386,26 @@ export function MessageDetail({
             {hasItems && (
               <div className="detail-items">
                 <div className="detail-items__section-label">Items ({msg.items.length})</div>
-                {msg.items.map((item, idx) => (
-                  <DetailItem
-                    key={`${idx}-${item.item_type}-${item.agent_id || item.tool_name}`}
-                    ref={idx === selectedItem ? scrollRef : undefined}
-                    item={item}
-                    index={idx}
-                    isSelected={idx === selectedItem}
-                    isExpanded={expandedItems.has(idx)}
-                    isAgentActive={
-                      panelStack.length > 0 &&
-                      panelStack[0].item.agent_id === item.agent_id &&
-                      !!item.agent_id
-                    }
-                    onToggle={handleItemClick}
-                    onToggleExpand={toggleItem}
-                    onSelect={setSelectedItem}
-                  />
-                ))}
+                {msg.items.map((item, idx) => {
+                  return (
+                    <DetailItem
+                      key={`${idx}-${item.item_type}-${item.agent_id || item.tool_name}`} // eslint-disable-line react/no-array-index-key -- DisplayItem has no stable unique ID
+                      ref={idx === selectedItem ? scrollRef : undefined}
+                      item={item}
+                      index={idx}
+                      isSelected={idx === selectedItem}
+                      isExpanded={expandedItems.has(idx)}
+                      isAgentActive={
+                        panelStack.length > 0 &&
+                        panelStack[0].item.agent_id === item.agent_id &&
+                        !!item.agent_id
+                      }
+                      onToggle={handleItemClick}
+                      onToggleExpand={toggleItem}
+                      onSelect={setSelectedItem}
+                    />
+                  );
+                })}
               </div>
             )}
             {ongoing && (
@@ -595,7 +597,7 @@ function AgentListColumn({
           {messages.map((msg, i) => {
             if (msg.role === "compact") {
               return (
-                <div key={`${i}-compact`} className="compact-separator">
+                <div key={`compact-${msg.timestamp}`} className="compact-separator">
                   <div className="compact-separator__line">
                     <span className="compact-separator__rule" />
                     <span>{msg.content}</span>
@@ -609,7 +611,7 @@ function AgentListColumn({
             const isLast = i === messages.length - 1;
             return (
               <MessageItem
-                key={`${i}-${msg.role}-${msg.timestamp}`}
+                key={`${msg.role}-${msg.timestamp}`}
                 ref={isSelected ? selectedRef : undefined}
                 message={msg}
                 index={i}
@@ -759,20 +761,22 @@ function AgentDetailColumn({
             {hasItems && (
               <div className="detail-items">
                 <div className="detail-items__section-label">Items ({msg.items.length})</div>
-                {msg.items.map((di, idx) => (
-                  <DetailItem
-                    key={`${idx}-${item.item_type}-${item.agent_id || item.tool_name}`}
-                    ref={idx === selectedItem ? scrollRef : undefined}
-                    item={di}
-                    index={idx}
-                    isSelected={idx === selectedItem}
-                    isExpanded={expandedItems.has(idx)}
-                    isAgentActive={activeAgentId === di.agent_id && !!di.agent_id}
-                    onToggle={handleItemClick}
-                    onToggleExpand={toggleItem}
-                    onSelect={setSelectedItem}
-                  />
-                ))}
+                {msg.items.map((di, idx) => {
+                  return (
+                    <DetailItem
+                      key={`${idx}-${di.item_type}-${di.agent_id || di.tool_name}`} // eslint-disable-line react/no-array-index-key -- DisplayItem has no stable unique ID
+                      ref={idx === selectedItem ? scrollRef : undefined}
+                      item={di}
+                      index={idx}
+                      isSelected={idx === selectedItem}
+                      isExpanded={expandedItems.has(idx)}
+                      isAgentActive={activeAgentId === di.agent_id && !!di.agent_id}
+                      onToggle={handleItemClick}
+                      onToggleExpand={toggleItem}
+                      onSelect={setSelectedItem}
+                    />
+                  );
+                })}
               </div>
             )}
             {item.subagent_ongoing && (
