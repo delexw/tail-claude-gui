@@ -75,11 +75,8 @@ pub async fn watch_session(
     // Stop existing watcher if any.
     state.stop_session_watcher()?;
 
-    // Read initial state.
-    let (classified, new_offset, _) = read_session_incremental(&path, 0)?;
-
     // Start watcher.
-    let handle = start_session_watcher(path, classified, new_offset, app);
+    let handle = start_session_watcher(path, app);
     state.set_session_watcher(handle)?;
 
     Ok(())

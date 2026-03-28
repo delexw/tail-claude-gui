@@ -66,12 +66,7 @@ struct SessionUpdatePayload {
 }
 
 /// Start watching a session file. Emits "session-update" events on changes.
-pub fn start_session_watcher(
-    path: String,
-    initial_classified: Vec<ClassifiedMsg>,
-    initial_offset: u64,
-    app: AppHandle,
-) -> WatcherHandle {
+pub fn start_session_watcher(path: String, app: AppHandle) -> WatcherHandle {
     let (stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
     let (signal_tx, mut signal_rx) = mpsc::channel::<()>(4);
 
@@ -136,11 +131,10 @@ pub fn start_session_watcher(
     // Spawn the async rebuild loop.
     let path_for_rebuild = path.clone();
     tauri::async_runtime::spawn(async move {
-        let mut all_classified = initial_classified;
-        let mut offset = initial_offset;
         let mut token_scanner = IncrementalTokenScanner::new();
         let mut prev_msg_count: usize = 0;
         let mut prev_ongoing = false;
+        let mut prev_file_size: u64 = 0;
 
         // Seed the token scanner with the initial file content.
         token_scanner.scan_new_bytes(&path_for_rebuild);
@@ -151,29 +145,26 @@ pub fn start_session_watcher(
                     break;
                 }
                 Some(()) = signal_rx.recv() => {
-                    // Detect file truncation (e.g. after /clear): if the file
-                    // is shorter than our current offset, the content was
-                    // replaced — reset and re-read from scratch.
+                    // Detect file truncation (e.g. after /clear): reset state
+                    // so the next emit fires with the fresh content.
                     let file_size = std::fs::metadata(&path_for_rebuild)
                         .map(|m| m.len())
                         .unwrap_or(0);
-                    if file_size < offset {
-                        offset = 0;
-                        all_classified.clear();
+                    if file_size < prev_file_size {
                         prev_msg_count = 0;
                         token_scanner = IncrementalTokenScanner::new();
                     }
+                    prev_file_size = file_size;
 
-                    // Read any new data from the main session file.
-                    match read_session_incremental(&path_for_rebuild, offset) {
-                        Ok((new_msgs, new_offset, _)) => {
-                            if !new_msgs.is_empty() || new_offset != offset {
-                                offset = new_offset;
-                                all_classified.extend(new_msgs);
-                            }
-                        }
+                    // Re-read the full session from scratch on every event.
+                    // Using a local variable (dropped at end of each iteration)
+                    // avoids holding all classified messages in memory for the
+                    // entire session lifetime — which caused multi-GB growth
+                    // for long sessions with large tool inputs/outputs.
+                    let all_classified = match read_session_incremental(&path_for_rebuild, 0) {
+                        Ok((msgs, _, _)) => msgs,
                         Err(_) => continue,
-                    }
+                    };
 
                     let mut chunks = build_chunks(&all_classified);
 

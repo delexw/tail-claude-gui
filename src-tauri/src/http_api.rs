@@ -285,11 +285,7 @@ async fn api_watch_session(
     if let Err(e) = app_state.stop_session_watcher() {
         return err_response(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e);
     }
-    let (classified, new_offset, _) = match read_session_incremental(&body.path, 0) {
-        Ok(v) => v,
-        Err(e) => return err_response(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e),
-    };
-    let handle = start_session_watcher(body.path, classified, new_offset, state.app.clone());
+    let handle = start_session_watcher(body.path, state.app.clone());
     if let Err(e) = app_state.set_session_watcher(handle) {
         return err_response(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e);
     }
