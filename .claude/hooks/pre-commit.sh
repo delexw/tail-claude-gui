@@ -4,6 +4,10 @@
 
 set -uo pipefail
 
+HOOK_INPUT=$(cat)
+SESSION_ID=$(printf '%s' "$HOOK_INPUT" | jq -r '.session_id // ""')
+FLAG_FILE="/tmp/claude-tests-confirmed${SESSION_ID:+-$SESSION_ID}"
+
 cd "$CLAUDE_PROJECT_DIR"
 
 STAGED=$(git diff --cached --name-only)
@@ -11,9 +15,6 @@ STAGED=$(git diff --cached --name-only)
 if [ -z "$STAGED" ]; then
   exit 0
 fi
-
-SESSION_ID="${CLAUDE_CODE_SESSION_ID:-${CLAUDE_SESSION_ID:-}}"
-FLAG_FILE="/tmp/claude-tests-confirmed${SESSION_ID:+-$SESSION_ID}"
 
 ERRORS=""
 
