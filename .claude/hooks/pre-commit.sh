@@ -20,13 +20,15 @@ FMT_OUTPUT=$(npm run fmt:check 2>&1) || {
 }
 
 # --- Lint check ---
-LINT_OUTPUT=$(npm run lint 2>&1) || {
+LINT_OUTPUT=$(npm run lint 2>&1)
+LINT_EXIT=$?
+if [ $LINT_EXIT -ne 0 ] || echo "$LINT_OUTPUT" | grep -q " warnings\? "; then
   if [ -n "$ERRORS" ]; then
-    ERRORS="$ERRORS\n\nLint errors:\n$LINT_OUTPUT"
+    ERRORS="$ERRORS\n\nLint issues:\n$LINT_OUTPUT"
   else
-    ERRORS="Lint errors found. Fix all issues, stage fixed files, then retry the commit.\n\n$LINT_OUTPUT"
+    ERRORS="Lint issues found. Fix all issues, stage fixed files, then retry the commit.\n\n$LINT_OUTPUT"
   fi
-}
+fi
 
 if [ -n "$ERRORS" ]; then
   printf '{"decision": "block", "reason": %s}' "$(printf '%s' "$ERRORS" | jq -Rs .)"
