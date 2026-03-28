@@ -6,10 +6,10 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Bash(git commit*)",
+            "if": "Bash(git commit *)",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre-commit.sh",
             "timeout": 120,
-            "statusMessage": "Formatting, linting, and staging..."
+            "statusMessage": "Checking format and lint..."
           }
         ]
       }

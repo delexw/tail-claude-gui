@@ -15,21 +15,21 @@ fi
 ERRORS=""
 
 # --- Format check ---
-if ! npm run fmt:check 2>&1; then
-  ERRORS="Format issues found. Run: npm run fmt, stage the changes, then retry the commit."
-fi
+FMT_OUTPUT=$(npm run fmt:check 2>&1) || {
+  ERRORS="Format issues found. Run: npm run fmt, stage the changes, then retry the commit.\n\n$FMT_OUTPUT"
+}
 
 # --- Lint check ---
-if ! LINT_OUTPUT=$(npm run lint 2>&1); then
+LINT_OUTPUT=$(npm run lint 2>&1) || {
   if [ -n "$ERRORS" ]; then
     ERRORS="$ERRORS\n\nLint errors:\n$LINT_OUTPUT"
   else
     ERRORS="Lint errors found. Fix all issues, then retry the commit.\n\n$LINT_OUTPUT"
   fi
-fi
+}
 
 if [ -n "$ERRORS" ]; then
-  echo "{\"decision\": \"block\", \"reason\": $(echo -e "$ERRORS" | jq -Rs .)}"
+  printf '{"decision": "block", "reason": %s}' "$(printf '%s' "$ERRORS" | jq -Rs .)"
   exit 0
 fi
 
