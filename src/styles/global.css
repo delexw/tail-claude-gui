@@ -1304,6 +1304,18 @@ body {
   padding: 16px 0;
 }
 
+.message-detail__debug-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 8px 16px;
+  opacity: 0.6;
+}
+
+.message-detail__debug-hint code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
 .message-detail__text {
   font-size: 13px;
   line-height: 1.6;

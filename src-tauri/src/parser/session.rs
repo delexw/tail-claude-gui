@@ -8,6 +8,7 @@ use std::path::PathBuf;
 
 use super::chunk::{build_chunks, Chunk};
 use super::classify::{classify, ClassifiedMsg};
+use super::debuglog::extract_hook_msgs;
 use super::entry::parse_entry;
 
 /// SessionInfo holds metadata about a discovered session file for the picker.
@@ -54,6 +55,29 @@ pub fn extract_session_meta(path: &str) -> SessionMeta {
 pub fn read_session(path: &str) -> Result<Vec<Chunk>, String> {
     let (msgs, _, _) = read_session_incremental(path, 0)?;
     Ok(build_chunks(&msgs))
+}
+
+/// Full session load: JSONL classified messages merged with hook events from the
+/// debug log (if one exists at `~/.claude/debug/{session_id}.txt`).
+///
+/// Non-Stop hooks (PreToolUse, PostToolUse, UserPromptSubmit, SessionStart) are
+/// only written to the debug log (not the JSONL) in Claude Code v2.1.84+. This
+/// function surfaces them by reading the debug log and merging by timestamp.
+pub fn read_session_with_debug_hooks(path: &str) -> Result<(Vec<ClassifiedMsg>, u64, u64), String> {
+    let (mut msgs, offset, bytes) = read_session_incremental(path, 0)?;
+    let debug_hooks = extract_hook_msgs(path);
+    if !debug_hooks.is_empty() {
+        msgs.extend(debug_hooks);
+        msgs.sort_by_key(|m| match m {
+            ClassifiedMsg::User(u) => u.timestamp,
+            ClassifiedMsg::AI(a) => a.timestamp,
+            ClassifiedMsg::System(s) => s.timestamp,
+            ClassifiedMsg::Teammate(t) => t.timestamp,
+            ClassifiedMsg::Compact(c) => c.timestamp,
+            ClassifiedMsg::Hook(h) => h.timestamp,
+        });
+    }
+    Ok((msgs, offset, bytes))
 }
 
 /// Read new lines from a session file starting at the given byte offset.

@@ -176,6 +176,11 @@ export function MessageDetail({
   const time = formatExactTime(msg.timestamp);
   const hasItems = msg.items.length > 0;
   const hasPanels = panelStack.length > 0;
+  const hasToolCalls = msg.items.some(
+    (i) => i.item_type === "ToolCall" || i.item_type === "Subagent",
+  );
+  const hasHookEvents = msg.items.some((i) => i.item_type === "HookEvent");
+  const showDebugHint = hasToolCalls && !hasHookEvents;
 
   // Stack manipulation
   const openSubagentFromMain = useCallback((item: DisplayItem) => {
@@ -406,6 +411,11 @@ export function MessageDetail({
                     />
                   );
                 })}
+              </div>
+            )}
+            {showDebugHint && (
+              <div className="message-detail__debug-hint">
+                Run <code>claude --debug</code> to see PreToolUse / PostToolUse hooks
               </div>
             )}
             {ongoing && (

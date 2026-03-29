@@ -3,7 +3,7 @@ use tauri::{AppHandle, State};
 use crate::convert::*;
 use crate::parser::chunk::build_chunks;
 use crate::parser::ongoing::OngoingChecker;
-use crate::parser::session::{extract_session_meta, read_session_incremental, SessionMeta};
+use crate::parser::session::{extract_session_meta, read_session_with_debug_hooks, SessionMeta};
 use crate::parser::subagent::{discover_and_link_all, inject_orphan_subagents};
 use crate::parser::team::reconstruct_teams;
 use crate::state::AppState;
@@ -16,7 +16,7 @@ pub async fn load_session(path: String, state: State<'_, AppState>) -> Result<Lo
         return Err("no session path provided".to_string());
     }
 
-    let (classified, _new_offset, _) = read_session_incremental(&path, 0)?;
+    let (classified, _new_offset, _) = read_session_with_debug_hooks(&path)?;
     let mut chunks = build_chunks(&classified);
 
     // Discover and link subagent execution traces.

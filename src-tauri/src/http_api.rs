@@ -18,7 +18,7 @@ use crate::convert::*;
 use crate::parser::chunk::build_chunks;
 use crate::parser::debuglog::*;
 use crate::parser::ongoing::OngoingChecker;
-use crate::parser::session::{extract_session_meta, read_session_incremental};
+use crate::parser::session::{extract_session_meta, read_session_with_debug_hooks};
 use crate::parser::subagent::{discover_and_link_all, inject_orphan_subagents};
 use crate::parser::team::reconstruct_teams;
 use crate::state::AppState;
@@ -218,7 +218,7 @@ fn load_session_by_path(
     since: Option<DateTime<Utc>>,
     before: Option<DateTime<Utc>>,
 ) -> Response {
-    let (classified, _new_offset, _) = match read_session_incremental(&path, 0) {
+    let (classified, _new_offset, _) = match read_session_with_debug_hooks(&path) {
         Ok(v) => v,
         Err(e) => return err_response(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e),
     };

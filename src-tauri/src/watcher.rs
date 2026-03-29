@@ -8,7 +8,7 @@ use crate::convert::*;
 use crate::parser::chunk::build_chunks;
 use crate::parser::classify::ClassifiedMsg;
 use crate::parser::ongoing::OngoingChecker;
-use crate::parser::session::{read_session_incremental, IncrementalTokenScanner};
+use crate::parser::session::{read_session_with_debug_hooks, IncrementalTokenScanner};
 use crate::parser::subagent::{discover_and_link_all, inject_orphan_subagents};
 use crate::parser::team::reconstruct_teams;
 
@@ -133,6 +133,7 @@ pub fn start_session_watcher(path: String, app: AppHandle) -> WatcherHandle {
     tauri::async_runtime::spawn(async move {
         let mut token_scanner = IncrementalTokenScanner::new();
         let mut prev_msg_count: usize = 0;
+        let mut prev_item_count: usize = 0;
         let mut prev_ongoing = false;
         let mut prev_file_size: u64 = 0;
 
@@ -152,6 +153,7 @@ pub fn start_session_watcher(path: String, app: AppHandle) -> WatcherHandle {
                         .unwrap_or(0);
                     if file_size < prev_file_size {
                         prev_msg_count = 0;
+                        prev_item_count = 0;
                         token_scanner = IncrementalTokenScanner::new();
                     }
                     prev_file_size = file_size;
@@ -161,7 +163,7 @@ pub fn start_session_watcher(path: String, app: AppHandle) -> WatcherHandle {
                     // avoids holding all classified messages in memory for the
                     // entire session lifetime — which caused multi-GB growth
                     // for long sessions with large tool inputs/outputs.
-                    let all_classified = match read_session_incremental(&path_for_rebuild, 0) {
+                    let all_classified = match read_session_with_debug_hooks(&path_for_rebuild) {
                         Ok((msgs, _, _)) => msgs,
                         Err(_) => continue,
                     };
@@ -182,14 +184,23 @@ pub fn start_session_watcher(path: String, app: AppHandle) -> WatcherHandle {
                     let messages = chunks_to_messages(&chunks, &all_procs, &color_map);
 
                     // Skip emit if nothing meaningful changed.
+                    // Track both message count and total item count so that hook
+                    // events (which are added inside existing AI chunks without
+                    // creating a new top-level message) still trigger an emit.
                     let msg_count = messages.len();
-                    if msg_count == prev_msg_count && !ongoing && !prev_ongoing {
+                    let item_count: usize = messages.iter().map(|m| m.items.len()).sum();
+                    if msg_count == prev_msg_count
+                        && item_count == prev_item_count
+                        && !ongoing
+                        && !prev_ongoing
+                    {
                         // Token totals may still have changed — update scanner
                         // but skip the expensive emit + serialize.
                         token_scanner.scan_new_bytes(&path_for_rebuild);
                         continue;
                     }
                     prev_msg_count = msg_count;
+                    prev_item_count = item_count;
                     prev_ongoing = ongoing;
 
                     // Extract last permission_mode from UserMsg entries.
