@@ -222,6 +222,38 @@ pub fn classify(e: Entry) -> Option<ClassifiedMsg> {
         }
     }
 
+    // Rescue hook attachment entries for all non-Stop hook events (PreToolUse, PostToolUse,
+    // UserPromptSubmit, Notification, SessionStart, etc.).
+    // Claude Code writes these as: {type:"attachment", attachment:{type:"hook_success"|
+    // "hook_non_blocking_error"|"hook_blocking_error"|"hook_cancelled"|..., hookEvent, hookName}}
+    if e.entry_type == "attachment" {
+        if let Some(ref att) = e.attachment {
+            let hook_event = att.get("hookEvent").and_then(|v| v.as_str()).unwrap_or("");
+            if !hook_event.is_empty() {
+                let hook_name = att
+                    .get("hookName")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                // For blocking errors, extract the error message as the command context.
+                let command = att
+                    .get("blockingError")
+                    .and_then(|v| v.get("blockingError"))
+                    .and_then(|v| v.as_str())
+                    .or_else(|| att.get("stderr").and_then(|v| v.as_str()))
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                return Some(ClassifiedMsg::Hook(HookMsg {
+                    timestamp: ts,
+                    hook_event: hook_event.to_string(),
+                    hook_name,
+                    command,
+                }));
+            }
+        }
+    }
+
     // Hard noise: structural metadata types.
     if NOISE_ENTRY_TYPES.contains(&e.entry_type.as_str()) {
         return None;
@@ -1045,6 +1077,79 @@ mod tests {
                 other
             ),
         }
+    }
+
+    #[test]
+    fn classify_rescues_attachment_hook_success() {
+        // PreToolUse/PostToolUse/UserPromptSubmit/etc. hooks are written as attachment entries.
+        let e = Entry {
+            entry_type: "attachment".to_string(),
+            uuid: "uuid-att-hook".to_string(),
+            timestamp: "2025-01-15T10:30:00Z".to_string(),
+            attachment: Some(json!({
+                "type": "hook_success",
+                "hookEvent": "PreToolUse",
+                "hookName": "my-pre-hook",
+                "toolUseID": "tool-123",
+                "content": "Success"
+            })),
+            ..Default::default()
+        };
+        match classify(e) {
+            Some(ClassifiedMsg::Hook(h)) => {
+                assert_eq!(h.hook_event, "PreToolUse");
+                assert_eq!(h.hook_name, "my-pre-hook");
+            }
+            other => panic!(
+                "Expected Hook for attachment/hook_success entry, got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn classify_rescues_attachment_hook_blocking_error_with_message() {
+        // hook_blocking_error extracts the error message into command field.
+        let e = Entry {
+            entry_type: "attachment".to_string(),
+            uuid: "uuid-att-block".to_string(),
+            timestamp: "2025-01-15T10:30:00Z".to_string(),
+            attachment: Some(json!({
+                "type": "hook_blocking_error",
+                "hookEvent": "PostToolUse",
+                "hookName": "post-lint",
+                "blockingError": {"blockingError": "Lint failed: unused variable"}
+            })),
+            ..Default::default()
+        };
+        match classify(e) {
+            Some(ClassifiedMsg::Hook(h)) => {
+                assert_eq!(h.hook_event, "PostToolUse");
+                assert_eq!(h.hook_name, "post-lint");
+                assert!(h.command.contains("Lint failed"));
+            }
+            other => panic!(
+                "Expected Hook for attachment/hook_blocking_error, got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn classify_drops_attachment_without_hook_event() {
+        // Non-hook attachments (file attachments, etc.) must not be shown as hooks.
+        let e = Entry {
+            entry_type: "attachment".to_string(),
+            uuid: "uuid-att-file".to_string(),
+            timestamp: "2025-01-15T10:30:00Z".to_string(),
+            attachment: Some(json!({
+                "type": "file",
+                "filename": "README.md",
+                "content": "# readme"
+            })),
+            ..Default::default()
+        };
+        assert!(classify(e).is_none(), "Non-hook attachment must be dropped");
     }
 
     // --- Unknown / structural entry type tests (compat: v2.1.79-v2.1.83) ---
