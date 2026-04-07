@@ -527,6 +527,33 @@ fn extract_tool_search_matches(raw: &Option<Value>) -> Option<Vec<String>> {
     }
 }
 
+/// Normalizes a `tool_use.input` value to handle the pre-v2.1.92 streaming bug where
+/// array/object fields were emitted as JSON-encoded strings instead of native JSON types.
+///
+/// For example, `"env": "[\"KEY=val\"]"` is parsed back to `"env": ["KEY=val"]`.
+/// Values that are already arrays or objects, or strings that don't parse as
+/// arrays/objects, are left unchanged.
+fn normalize_tool_input(input: Value) -> Value {
+    match input {
+        Value::Object(mut map) => {
+            for val in map.values_mut() {
+                if let Value::String(s) = val {
+                    let trimmed = s.trim_start();
+                    if trimmed.starts_with('[') || trimmed.starts_with('{') {
+                        if let Ok(parsed) = serde_json::from_str::<Value>(s) {
+                            if matches!(parsed, Value::Array(_) | Value::Object(_)) {
+                                *val = parsed;
+                            }
+                        }
+                    }
+                }
+            }
+            Value::Object(map)
+        }
+        other => other,
+    }
+}
+
 fn extract_assistant_details(content: &Option<Value>) -> (usize, Vec<ToolCall>, Vec<ContentBlock>) {
     let blocks = match content {
         Some(Value::Array(arr)) => arr,
@@ -584,7 +611,7 @@ fn extract_assistant_details(content: &Option<Value>) -> (usize, Vec<ToolCall>, 
                     block_type: "tool_use".to_string(),
                     tool_id: id,
                     tool_name: name,
-                    tool_input: b.get("input").cloned(),
+                    tool_input: b.get("input").cloned().map(normalize_tool_input),
                     ..Default::default()
                 });
             }
@@ -1207,6 +1234,98 @@ mod tests {
                 "Expected meta AI for unknown entry with role, got {:?}",
                 other
             ),
+        }
+    }
+
+    // --- normalize_tool_input tests (compat: pre-v2.1.92 streaming bug) ---
+
+    #[test]
+    fn normalize_tool_input_leaves_native_array_unchanged() {
+        let input = json!({"command": "ls", "env": ["KEY=val"]});
+        let result = normalize_tool_input(input.clone());
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn normalize_tool_input_leaves_native_object_unchanged() {
+        let input = json!({"options": {"flag": true}});
+        let result = normalize_tool_input(input.clone());
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn normalize_tool_input_parses_json_encoded_array_string() {
+        // Pre-v2.1.92: array field emitted as JSON-encoded string
+        let input = json!({"command": "ls", "env": "[\"KEY=val\"]"});
+        let result = normalize_tool_input(input);
+        assert_eq!(result["env"], json!(["KEY=val"]));
+        assert_eq!(result["command"], json!("ls"));
+    }
+
+    #[test]
+    fn normalize_tool_input_parses_json_encoded_object_string() {
+        // Pre-v2.1.92: object field emitted as JSON-encoded string
+        let input = json!({"options": "{\"flag\": true, \"count\": 3}"});
+        let result = normalize_tool_input(input);
+        assert_eq!(result["options"], json!({"flag": true, "count": 3}));
+    }
+
+    #[test]
+    fn normalize_tool_input_leaves_plain_string_unchanged() {
+        let input = json!({"command": "ls -la", "description": "List files"});
+        let result = normalize_tool_input(input.clone());
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn normalize_tool_input_leaves_string_that_looks_like_array_but_invalid_json_unchanged() {
+        let input = json!({"bad": "[not valid json"});
+        let result = normalize_tool_input(input.clone());
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn normalize_tool_input_leaves_non_object_input_unchanged() {
+        // input that is an array or scalar at the top level is returned as-is
+        let input = json!(["a", "b"]);
+        let result = normalize_tool_input(input.clone());
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn classify_tool_use_block_with_pre_v2_1_92_encoded_array_is_normalized() {
+        // Integration test: full classify path normalizes legacy encoded array
+        let content = json!([{
+            "type": "tool_use",
+            "id": "tool1",
+            "name": "Bash",
+            "input": {
+                "command": "ls",
+                "env": "[\"KEY=val\"]"
+            }
+        }]);
+        let mut e = make_entry("assistant", Some(content));
+        e.message.model = "claude-sonnet-4-20250514".to_string();
+        e.message.stop_reason = Some("tool_use".to_string());
+        match classify(e) {
+            Some(ClassifiedMsg::AI(ai)) => {
+                let block = ai
+                    .blocks
+                    .iter()
+                    .find(|b| b.block_type == "tool_use")
+                    .expect("should have tool_use block");
+                let env = block
+                    .tool_input
+                    .as_ref()
+                    .and_then(|v| v.get("env"))
+                    .expect("env field should exist");
+                assert_eq!(
+                    *env,
+                    json!(["KEY=val"]),
+                    "env should be a native array, not a string"
+                );
+            }
+            other => panic!("Expected AI, got {:?}", other),
         }
     }
 }
