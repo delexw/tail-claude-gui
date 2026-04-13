@@ -2,6 +2,17 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
 
+/// Deserializes a JSON string field, treating `null` as the type's default
+/// value. Serde's `#[serde(default)]` only applies when the field is absent;
+/// this helper also handles the `"field": null` case.
+fn null_as_default<'de, D, T>(d: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Default + Deserialize<'de>,
+{
+    Ok(Option::<T>::deserialize(d)?.unwrap_or_default())
+}
+
 /// Entry represents a raw JSONL line from a Claude Code session file.
 #[derive(Debug, Deserialize, Default)]
 pub struct Entry {
@@ -9,7 +20,7 @@ pub struct Entry {
     pub entry_type: String,
     #[serde(default)]
     pub uuid: String,
-    #[serde(default, rename = "parentUuid")]
+    #[serde(default, rename = "parentUuid", deserialize_with = "null_as_default")]
     pub parent_uuid: String,
     #[serde(default)]
     pub timestamp: String,
@@ -206,5 +217,23 @@ mod tests {
             ..Default::default()
         };
         assert!(e.tool_use_result_map().is_none());
+    }
+
+    #[test]
+    fn parse_entry_handles_null_parent_uuid() {
+        // Subagent JSONL files write parentUuid: null for the first entry.
+        // parse_entry must succeed and treat null as an empty string.
+        let line = json!({
+            "type": "user",
+            "uuid": "e65f5102-fdbe-424d-814f-a04e1ab466c6",
+            "parentUuid": null,
+            "isSidechain": true,
+            "timestamp": "2026-04-12T21:18:39.485Z",
+            "message": {"role": "user", "content": "Base directory for this skill: /skills/test"}
+        });
+        let bytes = serde_json::to_vec(&line).unwrap();
+        let entry = parse_entry(&bytes).expect("must parse despite null parentUuid");
+        assert_eq!(entry.parent_uuid, "");
+        assert_eq!(entry.entry_type, "user");
     }
 }

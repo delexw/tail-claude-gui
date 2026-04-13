@@ -810,4 +810,69 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].subagent_prompt, "");
     }
+
+    /// End-to-end test using the real JSONL session 3f97c7ca to verify that
+    /// Skill-forked agent summaries (detail-item__summary) are populated.
+    /// The session has no assistant messages — all 6 agents are orphans linked
+    /// via inject_orphan_subagents + the convert_display_items fallback.
+    #[test]
+    fn skill_forked_agents_have_subagent_desc_populated() {
+        use crate::parser::chunk::build_chunks;
+        use crate::parser::session::read_session_with_debug_hooks;
+        use crate::parser::subagent::{discover_and_link_all, inject_orphan_subagents};
+
+        let session_path = concat!(
+            env!("HOME"),
+            "/.claude/projects",
+            "/-Users-yang-liu--dovepaw-workspaces--oncall-analyzer-oa-0104cf01",
+            "/3f97c7ca-41e5-4a0d-b20e-beea73a63aa1.jsonl"
+        );
+
+        // Skip if the session doesn't exist on this machine.
+        if !std::path::Path::new(session_path).exists() {
+            return;
+        }
+
+        let (classified, _, _) = read_session_with_debug_hooks(session_path).unwrap();
+        let mut chunks = build_chunks(&classified);
+        let (mut all_procs, color_map) = discover_and_link_all(session_path, &chunks);
+        inject_orphan_subagents(&mut chunks, &mut all_procs);
+
+        let messages = chunks_to_messages(&chunks, &all_procs, &color_map);
+
+        // Collect all Subagent items across all messages.
+        let agent_items: Vec<_> = messages
+            .iter()
+            .flat_map(|m| m.items.iter())
+            .filter(|it| it.item_type == "Subagent")
+            .collect();
+
+        assert!(
+            !agent_items.is_empty(),
+            "session must produce at least one Subagent item"
+        );
+
+        let expected_skills = [
+            "rollbar-reader",
+            "pagerduty-oncall",
+            "datadog-analyser",
+            "slack-explorer",
+            "cloudflare-traffic-investigator",
+            "pir",
+        ];
+
+        for item in &agent_items {
+            assert!(
+                !item.subagent_desc.is_empty(),
+                "subagent_desc must not be empty (agent_id={})",
+                item.agent_id
+            );
+            assert!(
+                expected_skills.contains(&item.subagent_desc.as_str()),
+                "subagent_desc '{}' must be a known skill name (agent_id={})",
+                item.subagent_desc,
+                item.agent_id
+            );
+        }
+    }
 }
