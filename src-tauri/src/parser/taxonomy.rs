@@ -35,6 +35,7 @@ pub fn categorize_tool_name(name: &str) -> ToolCategory {
         | "ToolSearch"
         | "LSP"
         | "TodoWrite"
+        | "Monitor"
         | "AskUserQuestion"
         | "ListMcpResourcesTool"
         | "ReadMcpResourceTool" => ToolCategory::Tool,
@@ -106,6 +107,7 @@ mod tests {
     #[test]
     fn claude_code_utility_tools() {
         assert_eq!(categorize_tool_name("ToolSearch"), ToolCategory::Tool);
+        assert_eq!(categorize_tool_name("Monitor"), ToolCategory::Tool);
         assert_eq!(categorize_tool_name("LSP"), ToolCategory::Tool);
         assert_eq!(categorize_tool_name("TodoWrite"), ToolCategory::Tool);
         assert_eq!(categorize_tool_name("AskUserQuestion"), ToolCategory::Tool);

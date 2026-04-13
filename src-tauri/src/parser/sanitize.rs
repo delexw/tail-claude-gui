@@ -12,14 +12,29 @@ pub fn extract_text(content: &Option<Value>) -> String {
         Some(Value::Array(blocks)) => {
             let mut parts = Vec::new();
             for block in blocks {
-                if let Some(block_type) = block.get("type").and_then(|v| v.as_str()) {
-                    if block_type == "text" {
+                let block_type = block.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                match block_type {
+                    "text" => {
                         if let Some(text) = block.get("text").and_then(|v| v.as_str()) {
                             if !text.is_empty() {
                                 parts.push(text.to_string());
                             }
                         }
                     }
+                    // Attachment blocks added in Claude Code v2.1.97: produce a
+                    // placeholder so the user message is not silently empty in the UI.
+                    "image" => {
+                        parts.push("[Image attached]".to_string());
+                    }
+                    "document" => {
+                        let media_type = block
+                            .get("source")
+                            .and_then(|s| s.get("media_type"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("document");
+                        parts.push(format!("[Document attached: {media_type}]"));
+                    }
+                    _ => {}
                 }
             }
             parts.join("\n")
@@ -241,9 +256,43 @@ mod tests {
     }
 
     #[test]
-    fn extract_text_array_skips_non_text() {
+    fn extract_text_image_block_produces_placeholder() {
+        // Issue #37: image attachment blocks persisted from v2.1.97 must not silently drop.
+        let v = Some(
+            json!([{"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "abc"}}]),
+        );
+        assert_eq!(extract_text(&v), "[Image attached]");
+    }
+
+    #[test]
+    fn extract_text_document_block_produces_placeholder() {
+        // Issue #37: document attachment blocks must show media_type in placeholder.
+        let v = Some(
+            json!([{"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": "abc"}}]),
+        );
+        assert_eq!(extract_text(&v), "[Document attached: application/pdf]");
+    }
+
+    #[test]
+    fn extract_text_document_block_missing_media_type() {
+        let v = Some(json!([{"type": "document", "source": {}}]));
+        assert_eq!(extract_text(&v), "[Document attached: document]");
+    }
+
+    #[test]
+    fn extract_text_mixed_text_and_image() {
         let v = Some(json!([
-            {"type": "image", "url": "http://example.com"},
+            {"type": "text", "text": "see this"},
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": ""}}
+        ]));
+        assert_eq!(extract_text(&v), "see this\n[Image attached]");
+    }
+
+    #[test]
+    fn extract_text_array_skips_non_text() {
+        // Unknown block types (not image/document) are silently skipped.
+        let v = Some(json!([
+            {"type": "thinking_delta", "text": "ignored"},
             {"type": "text", "text": "only this"}
         ]));
         assert_eq!(extract_text(&v), "only this");

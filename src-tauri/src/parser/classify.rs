@@ -515,7 +515,7 @@ fn has_user_content(raw: &Option<Value>, str_content: &str) -> bool {
         Some(Value::String(_)) => !str_content.trim().is_empty(),
         Some(Value::Array(blocks)) => blocks.iter().any(|b| {
             let bt = b.get("type").and_then(|v| v.as_str()).unwrap_or("");
-            bt == "text" || bt == "image"
+            bt == "text" || bt == "image" || bt == "document"
         }),
         _ => false,
     }
@@ -1440,6 +1440,60 @@ mod tests {
                 );
             }
             other => panic!("Expected AI, got {:?}", other),
+        }
+    }
+
+    // --- Issue #35: PermissionDenied hook event is handled generically ---
+
+    #[test]
+    fn permission_denied_hook_attachment_produces_hook_msg() {
+        // PermissionDenied fires as an attachment entry; the generic hookEvent
+        // pattern must recognise it without an explicit match arm.
+        let mut e = make_entry("user", None);
+        e.entry_type = "attachment".to_string();
+        e.attachment = Some(json!({
+            "type": "hook_success",
+            "hookEvent": "PermissionDenied",
+            "hookName": "~/.claude/hooks/deny.sh"
+        }));
+        match classify(e) {
+            Some(ClassifiedMsg::Hook(h)) => {
+                assert_eq!(h.hook_event, "PermissionDenied");
+                assert_eq!(h.hook_name, "~/.claude/hooks/deny.sh");
+            }
+            other => panic!("Expected Hook, got {:?}", other),
+        }
+    }
+
+    // --- Issue #41: missing file_path in tool_use_result is handled gracefully ---
+
+    #[test]
+    fn tool_use_result_without_file_path_does_not_crash() {
+        // tool_use_result is Option<Value>; absent file_path must not panic.
+        let mut e = make_entry("user", Some(json!("Tool loaded.")));
+        e.tool_use_result = Some(json!({
+            "type": "tool_result",
+            "tool_use_id": "toolu_abc",
+            "content": "File written successfully"
+            // file_path deliberately absent
+        }));
+        // classify must not panic; it returns None (tool-loaded noise) or a SystemMsg.
+        let _ = classify(e);
+    }
+
+    // --- Issue #37: document content block is recognised as user content ---
+
+    #[test]
+    fn has_user_content_true_for_document_block() {
+        let content = Some(json!([{
+            "type": "document",
+            "source": {"type": "base64", "media_type": "application/pdf", "data": "abc"}
+        }]));
+        let e = make_entry("user", content);
+        // classify should produce a UserMsg (not None) because document counts as user content.
+        match classify(e) {
+            Some(ClassifiedMsg::User(_)) => {}
+            other => panic!("Expected UserMsg for document block, got {:?}", other),
         }
     }
 }

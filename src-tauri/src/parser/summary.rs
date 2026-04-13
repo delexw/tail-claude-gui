@@ -40,6 +40,7 @@ pub fn tool_summary(name: &str, input: &Option<Value>) -> String {
         "TeamDelete" => summary_team_delete(fields),
         "AskUserQuestion" => summary_ask_user(fields),
         "Skill" => summary_skill(fields),
+        "Monitor" => summary_monitor(fields),
         "EnterPlanMode" | "ExitPlanMode" | "EnterWorktree" | "ExitWorktree" => name.to_string(),
         _ if name.starts_with("mcp__") => summary_mcp(name, fields),
         _ => summary_default(name, fields),
@@ -414,6 +415,19 @@ fn summary_mcp(name: &str, f: &serde_json::Map<String, Value>) -> String {
     }
 
     tool_part
+}
+
+/// Monitor tool summary: prefer `label`, then `command`, then fall back to "Monitor".
+fn summary_monitor(f: &serde_json::Map<String, Value>) -> String {
+    let label = get_str(f, "label");
+    if !label.is_empty() {
+        return label.to_string();
+    }
+    let command = get_str(f, "command");
+    if !command.is_empty() {
+        return truncate(command, 60);
+    }
+    "Monitor".to_string()
 }
 
 fn summary_skill(f: &serde_json::Map<String, Value>) -> String {
@@ -888,6 +902,32 @@ mod tests {
     }
 
     // ---- truncate_word tests ----
+
+    // --- Monitor tool summary tests (#39) ---
+
+    #[test]
+    fn summary_monitor_with_label() {
+        let input = json!({"label": "background build"});
+        assert_eq!(tool_summary("Monitor", &Some(input)), "background build");
+    }
+
+    #[test]
+    fn summary_monitor_with_command() {
+        let input = json!({"command": "npm run watch"});
+        assert_eq!(tool_summary("Monitor", &Some(input)), "npm run watch");
+    }
+
+    #[test]
+    fn summary_monitor_label_takes_priority_over_command() {
+        let input = json!({"label": "my label", "command": "some command"});
+        assert_eq!(tool_summary("Monitor", &Some(input)), "my label");
+    }
+
+    #[test]
+    fn summary_monitor_no_fields_returns_monitor() {
+        let input = json!({});
+        assert_eq!(tool_summary("Monitor", &Some(input)), "Monitor");
+    }
 
     #[test]
     fn truncate_word_within_limit() {
