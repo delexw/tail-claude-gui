@@ -38,7 +38,7 @@ pub async fn start_http_server(app: AppHandle) {
         .route("/api/settings", get(api_get_settings))
         .route("/api/settings/dir", post(api_set_projects_dir))
         .route("/api/project-dirs", get(api_get_project_dirs))
-        .route("/api/sessions", get(api_discover_sessions))
+        .route("/api/sessions", post(api_discover_sessions))
         .route("/api/session", get(api_get_session_by_id))
         .route("/api/session/load", post(api_load_session))
         .route("/api/session/meta", get(api_get_session_meta))
@@ -183,16 +183,16 @@ async fn api_get_project_dirs(State(state): State<Arc<HttpState>>) -> Response {
 // ---------------------------------------------------------------------------
 
 #[derive(Deserialize)]
-struct DiscoverQuery {
-    dirs: String, // comma-separated
+struct DiscoverBody {
+    dirs: Vec<String>,
 }
 
 async fn api_discover_sessions(
     State(state): State<Arc<HttpState>>,
-    Query(q): Query<DiscoverQuery>,
+    Json(body): Json<DiscoverBody>,
 ) -> Response {
     let app_state = app_state(&state);
-    let project_dirs: Vec<String> = q.dirs.split(',').map(|s| s.to_string()).collect();
+    let project_dirs = body.dirs;
     let cache = match app_state.session_cache.lock() {
         Ok(c) => c,
         Err(e) => {

@@ -43,8 +43,7 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
 export const api = {
   getSettings: () => get<SettingsResponse>("/api/settings"),
   getProjectDirs: () => get<string[]>("/api/project-dirs"),
-  discoverSessions: (dirs: string[]) =>
-    get<SessionInfo[]>(`/api/sessions?dirs=${encodeURIComponent(dirs.join(","))}`),
+  discoverSessions: (dirs: string[]) => post<SessionInfo[]>("/api/sessions", { dirs }),
   loadSession: (path: string) => post<LoadResult>("/api/session/load", { path }),
   watchSession: (path: string) => post<void>("/api/session/watch", { path }),
   unwatchSession: () => post<void>("/api/session/unwatch"),

@@ -28,10 +28,9 @@ const routes: Record<string, Route> = {
   },
   get_project_dirs: { path: "/api/project-dirs" },
   discover_sessions: {
-    path: (a) => {
-      const dirs = (a.projectDirs as string[]) ?? [];
-      return `/api/sessions?dirs=${encodeURIComponent(dirs.join(","))}`;
-    },
+    method: "POST",
+    path: "/api/sessions",
+    body: (a) => ({ dirs: (a.projectDirs as string[]) ?? [] }),
   },
   load_session: {
     method: "POST",

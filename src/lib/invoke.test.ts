@@ -60,14 +60,20 @@ describe("invoke (web/HTTP mode)", () => {
     expect(res).toEqual(dirs);
   });
 
-  it("discover_sessions calls GET /api/sessions with dirs query", async () => {
+  it("discover_sessions calls POST /api/sessions with dirs body", async () => {
     const fetchFn = mockFetch([]);
     const { invoke } = await import("./invoke");
 
     await invoke("discover_sessions", { projectDirs: ["/a", "/b"] });
     const url = fetchFn.mock.calls[0][0] as string;
-    expect(url).toContain("/api/sessions?dirs=");
-    expect(url).toContain(encodeURIComponent("/a,/b"));
+    expect(url).toBe(`${API_BASE}/api/sessions`);
+    expect(fetchFn).toHaveBeenCalledWith(
+      `${API_BASE}/api/sessions`,
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ dirs: ["/a", "/b"] }),
+      }),
+    );
   });
 
   it("watch/unwatch commands resolve without error", async () => {
