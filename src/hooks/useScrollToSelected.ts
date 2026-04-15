@@ -31,24 +31,15 @@ export function useScrollToSelected(dep: number) {
         ? container.getBoundingClientRect()
         : new DOMRect(0, 0, window.innerWidth, window.innerHeight);
 
-    // If the top of the element is above the container's top, we MUST align it to the top.
-    // This happens when navigating UP to an element that is taller than the viewport.
-    // "nearest" would align its bottom, leaving the top hidden.
-    if (elRect.top < containerRect.top) {
+    // If the top is above the container, or the element is taller than the
+    // container, align to the top so the header stays visible.
+    if (elRect.top < containerRect.top || el.offsetHeight > containerHeight) {
       el.scrollIntoView({ block: "start" });
     } else if (elRect.bottom > containerRect.bottom) {
-      // If it's below the container, we use "nearest" to bring it into view.
-      // But if it's taller than the container, we still want to see its top edge (the header).
-      if (el.offsetHeight > containerHeight) {
-        el.scrollIntoView({ block: "start" });
-      } else {
-        el.scrollIntoView({ block: "nearest" });
-      }
-    } else {
-      // Already fully visible (or fits exactly)
-      // Do nothing, or just call nearest
+      // Below the container → bring into view with nearest alignment.
       el.scrollIntoView({ block: "nearest" });
     }
+    // Already fully visible → no-op.
   }, [dep]);
 
   return ref;
