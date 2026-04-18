@@ -353,7 +353,7 @@ pub fn discover_project_sessions(project_dir: &str) -> Result<Vec<SessionInfo>, 
         });
     }
 
-    sessions.sort_by(|a, b| b.mod_time.cmp(&a.mod_time));
+    sessions.sort_by_key(|b| std::cmp::Reverse(b.mod_time));
     Ok(sessions)
 }
 
@@ -365,7 +365,7 @@ pub fn discover_all_project_sessions(project_dirs: &[String]) -> Result<Vec<Sess
             all.extend(sessions);
         }
     }
-    all.sort_by(|a, b| b.mod_time.cmp(&a.mod_time));
+    all.sort_by_key(|b| std::cmp::Reverse(b.mod_time));
     Ok(all)
 }
 
@@ -443,7 +443,7 @@ where
         }
     }
 
-    sessions.sort_by(|a, b| b.mod_time.cmp(&a.mod_time));
+    sessions.sort_by_key(|b| std::cmp::Reverse(b.mod_time));
     Ok(sessions)
 }
 

@@ -319,7 +319,7 @@ pub fn discover_subagents(session_path: &str) -> Result<Vec<SubagentProcess>, St
         procs.push(proc);
     }
 
-    procs.sort_by(|a, b| a.start_time.cmp(&b.start_time));
+    procs.sort_by_key(|a| a.start_time);
     Ok(procs)
 }
 
@@ -992,7 +992,7 @@ pub fn discover_team_sessions(
         procs.push(proc);
     }
 
-    procs.sort_by(|a, b| a.start_time.cmp(&b.start_time));
+    procs.sort_by_key(|a| a.start_time);
     Ok(procs)
 }
 
