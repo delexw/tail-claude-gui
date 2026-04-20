@@ -13,15 +13,15 @@
 #   docker build -t claude-code-trace .
 #
 # Run (mount your Claude Code session data read-only):
-#   docker run --rm -p 8080:8080 \
+#   docker run --rm -p 1421:1421 \
 #     -v "$HOME/.claude:/home/app/.claude:ro" \
 #     claude-code-trace
 #
-# Then open http://localhost:8080 in a browser.
+# Then open http://localhost:1421 in a browser.
 #
 # Configurable env vars:
 #   CCTRACE_HTTP_HOST   bind host    (default: 0.0.0.0 in this image)
-#   CCTRACE_HTTP_PORT   bind port    (default: 8080 in this image)
+#   CCTRACE_HTTP_PORT   bind port    (default: 1421 in this image)
 #   CCTRACE_STATIC_DIR  static dist  (default: /app/dist in this image)
 # =============================================================================
 
@@ -104,7 +104,7 @@ COPY script/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 ENV CCTRACE_HTTP_HOST=0.0.0.0 \
-    CCTRACE_HTTP_PORT=8080 \
+    CCTRACE_HTTP_PORT=1421 \
     CCTRACE_STATIC_DIR=/app/dist \
     XDG_CONFIG_HOME=/home/app/.config \
     XDG_DATA_HOME=/home/app/.local/share
@@ -114,10 +114,10 @@ USER app
 # Mountpoint for the host's ~/.claude directory — session JSONL files live here.
 VOLUME ["/home/app/.claude"]
 
-EXPOSE 8080
+EXPOSE 1421
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD /bin/sh -c 'exec 3<>/dev/tcp/127.0.0.1/${CCTRACE_HTTP_PORT:-8080}' || exit 1
+    CMD /bin/sh -c 'exec 3<>/dev/tcp/127.0.0.1/${CCTRACE_HTTP_PORT:-1421}' || exit 1
 
 ENTRYPOINT ["dumb-init", "--", "/usr/local/bin/docker-entrypoint.sh"]
 CMD ["claude-code-trace", "--headless"]

@@ -20,14 +20,14 @@ single HTTP port, and reads your Claude Code sessions from a mounted volume.
 # Build
 docker build -t claude-code-trace .
 
-# Run — expose port 8080, mount ~/.claude read-only
+# Run — expose port 1421, mount ~/.claude read-only
 docker run --rm \
-  -p 8080:8080 \
+  -p 1421:1421 \
   -v "$HOME/.claude:/home/app/.claude:ro" \
   claude-code-trace
 ```
 
-Open http://localhost:8080 in a browser. The session picker will populate
+Open http://localhost:1421 in a browser. The session picker will populate
 from the mounted directory.
 
 Press `Ctrl-C` to stop the container.
@@ -54,7 +54,7 @@ All runtime knobs are environment variables, so you can override them with
 | Variable             | Default     | What it does                                 |
 | -------------------- | ----------- | -------------------------------------------- |
 | `CCTRACE_HTTP_HOST`  | `0.0.0.0`   | Bind host for the HTTP server                |
-| `CCTRACE_HTTP_PORT`  | `8080`      | Bind port for the HTTP server                |
+| `CCTRACE_HTTP_PORT`  | `1421`      | Bind port for the HTTP server                |
 | `CCTRACE_STATIC_DIR` | `/app/dist` | Directory of static frontend assets to serve |
 
 Outside Docker (i.e. the normal desktop/web app) these variables are not
@@ -106,10 +106,10 @@ docker run --rm -v "$HOME/.claude:/home/app/.claude:ro" \
   claude-code-trace ls -la /home/app/.claude/projects
 ```
 
-**Port 8080 is already in use.** Pick a different host port:
+**Port 1421 is already in use.** Pick a different host port:
 
 ```bash
-docker run --rm -p 9090:8080 \
+docker run --rm -p 9090:1421 \
   -v "$HOME/.claude:/home/app/.claude:ro" \
   claude-code-trace
 ```

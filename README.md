@@ -69,10 +69,10 @@ npm run dev:tui          # TUI (starts backend + terminal UI)
 
 ```bash
 docker build -t claude-code-trace .
-docker run --rm -p 8080:8080 \
+docker run --rm -p 1421:1421 \
   -v "$HOME/.claude:/home/app/.claude:ro" \
   claude-code-trace
-# then open http://localhost:8080
+# then open http://localhost:1421
 ```
 
 Or with compose: `docker compose up --build`. See
