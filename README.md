@@ -65,6 +65,20 @@ npm run dev:web          # web mode (opens browser)
 npm run dev:tui          # TUI (starts backend + terminal UI)
 ```
 
+### Run in Docker (web mode only)
+
+```bash
+docker build -t claude-code-trace .
+docker run --rm -p 1421:1421 \
+  -v "$HOME/.claude:/home/app/.claude:ro" \
+  claude-code-trace
+# then open http://localhost:1421
+```
+
+Or with compose: `docker compose up --build`. See
+[docs/docker.md](docs/docker.md) for runtime env vars, volume layout, and
+troubleshooting.
+
 ## Requirements
 
 - [Rust](https://rustup.rs/) 1.77+

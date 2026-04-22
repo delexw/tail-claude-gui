@@ -1,0 +1,41 @@
+# Source control
+.git
+.github
+.gitignore
+
+# Node / build output
+node_modules
+dist
+src-tauri/target
+tui/node_modules
+tui/dist
+
+# Cargo artifacts
+**/*.rs.bk
+**/*.pdb
+**/mutants.out*
+
+# Editor / OS
+.idea
+.vscode
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Secrets / local env
+.env
+.env.*
+
+# GitNexus cache
+.gitnexus
+.claude
+
+# Large demo assets not needed in the image
+demo.gif
+
+# Docker files themselves do not need to be in the build context
+Dockerfile
+.dockerignore
+docker-compose.yml

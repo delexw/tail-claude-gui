@@ -13,6 +13,7 @@ use tauri::{AppHandle, Manager};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 use tower_http::cors::CorsLayer;
+use tower_http::services::ServeDir;
 
 use crate::convert::*;
 use crate::parser::chunk::build_chunks;
@@ -30,11 +31,49 @@ pub struct HttpState {
     pub app: AppHandle,
 }
 
-/// Start the HTTP API server on port 11423.
+/// Default bind host. Overridable via the `CCTRACE_HTTP_HOST` env var.
+pub const DEFAULT_HTTP_HOST: &str = "127.0.0.1";
+/// Default bind port. Overridable via the `CCTRACE_HTTP_PORT` env var.
+pub const DEFAULT_HTTP_PORT: u16 = 11423;
+
+/// Pick the host from a raw env value, normalizing empty/missing to the default.
+fn pick_host(raw: Option<String>) -> String {
+    raw.filter(|s| !s.is_empty())
+        .unwrap_or_else(|| DEFAULT_HTTP_HOST.to_string())
+}
+
+/// Pick the port from a raw env value, silently dropping invalid values.
+fn pick_port(raw: Option<String>) -> u16 {
+    raw.and_then(|s| s.parse::<u16>().ok())
+        .unwrap_or(DEFAULT_HTTP_PORT)
+}
+
+/// Resolve the bind address from env vars, falling back to the defaults.
+pub fn resolve_bind_addr() -> (String, u16) {
+    (
+        pick_host(std::env::var("CCTRACE_HTTP_HOST").ok()),
+        pick_port(std::env::var("CCTRACE_HTTP_PORT").ok()),
+    )
+}
+
+/// Optional directory of static frontend assets to serve alongside the API.
+/// When `CCTRACE_STATIC_DIR` is set to a non-empty path, the HTTP server
+/// will serve the frontend bundle as a fallback for all non-API routes.
+/// This is used by the Docker image to run the full web UI from a single
+/// process on a single port.
+pub fn resolve_static_dir() -> Option<String> {
+    std::env::var("CCTRACE_STATIC_DIR")
+        .ok()
+        .filter(|s| !s.is_empty())
+}
+
+/// Start the HTTP API server. Host, port, and static-asset directory are
+/// configurable via the `CCTRACE_HTTP_HOST`, `CCTRACE_HTTP_PORT`, and
+/// `CCTRACE_STATIC_DIR` env vars.
 pub async fn start_http_server(app: AppHandle) {
     let state = Arc::new(HttpState { app });
 
-    let router = Router::new()
+    let mut router = Router::new()
         .route("/api/settings", get(api_get_settings))
         .route("/api/settings/dir", post(api_set_projects_dir))
         .route("/api/project-dirs", get(api_get_project_dirs))
@@ -48,18 +87,26 @@ pub async fn start_http_server(app: AppHandle) {
         .route("/api/picker/unwatch", post(api_unwatch_picker))
         .route("/api/git-info", get(api_get_git_info))
         .route("/api/debug-log", get(api_get_debug_log))
-        .route("/api/events", get(api_events))
-        .layer(CorsLayer::permissive())
-        .with_state(state);
+        .route("/api/events", get(api_events));
 
-    let listener = match tokio::net::TcpListener::bind("127.0.0.1:11423").await {
+    if let Some(dir) = resolve_static_dir() {
+        let serve = ServeDir::new(&dir).append_index_html_on_directories(true);
+        router = router.fallback_service(serve);
+        eprintln!("HTTP API: serving static assets from {dir}");
+    }
+
+    let router = router.layer(CorsLayer::permissive()).with_state(state);
+
+    let (host, port) = resolve_bind_addr();
+    let addr = format!("{host}:{port}");
+    let listener = match tokio::net::TcpListener::bind(&addr).await {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("HTTP API: failed to bind port 11423: {e}");
+            eprintln!("HTTP API: failed to bind {addr}: {e}");
             return;
         }
     };
-    eprintln!("HTTP API: listening on http://127.0.0.1:11423");
+    eprintln!("HTTP API: listening on http://{addr}");
 
     if let Err(e) = axum::serve(listener, router).await {
         eprintln!("HTTP API: server error: {e}");
@@ -586,5 +633,42 @@ mod tests {
     #[test]
     fn invalid_since_parse_fails() {
         assert!("notadate".parse::<DateTime<Utc>>().is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // Bind address / static dir resolution
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn pick_host_uses_default_when_missing() {
+        assert_eq!(pick_host(None), DEFAULT_HTTP_HOST);
+    }
+
+    #[test]
+    fn pick_host_uses_default_when_empty() {
+        assert_eq!(pick_host(Some(String::new())), DEFAULT_HTTP_HOST);
+    }
+
+    #[test]
+    fn pick_host_uses_provided_value() {
+        assert_eq!(pick_host(Some("0.0.0.0".to_string())), "0.0.0.0");
+    }
+
+    #[test]
+    fn pick_port_uses_default_when_missing() {
+        assert_eq!(pick_port(None), DEFAULT_HTTP_PORT);
+    }
+
+    #[test]
+    fn pick_port_uses_default_when_unparsable() {
+        assert_eq!(
+            pick_port(Some("not-a-number".to_string())),
+            DEFAULT_HTTP_PORT
+        );
+    }
+
+    #[test]
+    fn pick_port_uses_parsed_value() {
+        assert_eq!(pick_port(Some("8080".to_string())), 8080);
     }
 }

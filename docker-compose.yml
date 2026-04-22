@@ -1,0 +1,26 @@
+services:
+  cctrace:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: claude-code-trace:latest
+    container_name: claude-code-trace
+    restart: unless-stopped
+    ports:
+      # Host:Container. Change the host port to expose elsewhere.
+      - "${CCTRACE_HOST_PORT:-1421}:1421"
+    environment:
+      # Override these if you change the container-side port.
+      CCTRACE_HTTP_HOST: 0.0.0.0
+      CCTRACE_HTTP_PORT: 1421
+      CCTRACE_STATIC_DIR: /app/dist
+    volumes:
+      # Claude Code writes sessions to ~/.claude/projects on the host.
+      # Mount read-only — the app never needs to write here.
+      - "${CLAUDE_HOME:-${HOME}/.claude}:/home/app/.claude:ro"
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/1421"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
