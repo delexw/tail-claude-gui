@@ -76,6 +76,11 @@ pub struct Entry {
     // `content`, not inside `message.content`.
     #[serde(default)]
     pub content: String,
+    // Present in forked session entries (v2.1.118+). When /fork branches a conversation,
+    // each inherited parent entry carries forkedFrom:{sessionId,messageUuid} to identify
+    // its origin. Entries without this field are newly added in the fork itself.
+    #[serde(default, rename = "forkedFrom")]
+    pub forked_from: Option<Value>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -242,6 +247,53 @@ mod tests {
         assert_eq!(
             entry.content,
             "Working on issue #49 — fixing recap entry parsing."
+        );
+    }
+
+    // --- Issue #60: forkedFrom field compat (v2.1.118+) ---
+
+    #[test]
+    fn parse_entry_forked_from_field_is_captured() {
+        // v2.1.118+: when /fork branches a conversation, each inherited parent entry
+        // carries forkedFrom:{sessionId,messageUuid}. The field must be captured.
+        let line = json!({
+            "type": "user",
+            "uuid": "fork-entry-uuid",
+            "timestamp": "2026-04-26T10:00:00Z",
+            "message": {"role": "user", "content": "Hello"},
+            "forkedFrom": {
+                "sessionId": "parent-session-id",
+                "messageUuid": "fork-entry-uuid"
+            }
+        });
+        let bytes = serde_json::to_vec(&line).unwrap();
+        let entry = parse_entry(&bytes).expect("must parse forked entry");
+        assert!(entry.forked_from.is_some(), "forkedFrom must be captured");
+        let ff = entry.forked_from.as_ref().unwrap();
+        assert_eq!(
+            ff.get("sessionId").and_then(|v| v.as_str()),
+            Some("parent-session-id")
+        );
+        assert_eq!(
+            ff.get("messageUuid").and_then(|v| v.as_str()),
+            Some("fork-entry-uuid")
+        );
+    }
+
+    #[test]
+    fn parse_entry_without_forked_from_is_not_inherited() {
+        // Regular entries (not inherited from a fork parent) must have forked_from = None.
+        let line = json!({
+            "type": "user",
+            "uuid": "regular-uuid",
+            "timestamp": "2026-04-26T10:00:00Z",
+            "message": {"role": "user", "content": "Hello"}
+        });
+        let bytes = serde_json::to_vec(&line).unwrap();
+        let entry = parse_entry(&bytes).expect("must parse regular entry");
+        assert!(
+            entry.forked_from.is_none(),
+            "regular entry must not have forkedFrom"
         );
     }
 

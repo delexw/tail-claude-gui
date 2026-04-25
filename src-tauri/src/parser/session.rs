@@ -536,13 +536,20 @@ pub(crate) fn scan_session_metadata(path: &str) -> SessionMetadata {
 
         let entry_type = raw.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
-        // Track timestamps for duration (all entries, even UUID-less ones).
-        if let Some(ts_str) = raw.get("timestamp").and_then(|v| v.as_str()) {
-            let ts = parse_timestamp(ts_str);
-            if first_ts.is_none() {
-                first_ts = Some(ts);
+        // Entries with `forkedFrom` were inherited from a parent session (v2.1.118+).
+        // Detect early so the flag is available for all per-entry decisions below.
+        let is_inherited = raw.get("forkedFrom").is_some();
+
+        // Track timestamps for duration. Skip inherited entries so the fork's duration
+        // reflects only its own activity, not the parent conversation's timeline.
+        if !is_inherited {
+            if let Some(ts_str) = raw.get("timestamp").and_then(|v| v.as_str()) {
+                let ts = parse_timestamp(ts_str);
+                if first_ts.is_none() {
+                    first_ts = Some(ts);
+                }
+                last_ts = Some(ts);
             }
-            last_ts = Some(ts);
         }
 
         // --- Session-level metadata (cwd, branch: first seen; mode: last seen) ---
@@ -579,10 +586,13 @@ pub(crate) fn scan_session_metadata(path: &str) -> SessionMetadata {
         let is_meta_flag = raw.get("isMeta").and_then(|v| v.as_bool()).unwrap_or(false);
 
         // --- Turn counting (matches isParsedUserChunkMessage + AI pairing) ---
-        if is_user_chunk_for_turn_count(&raw, entry_type, is_meta_flag, is_sidechain) {
+        // Skip inherited entries so the turn count reflects the fork's own activity.
+        if !is_inherited
+            && is_user_chunk_for_turn_count(&raw, entry_type, is_meta_flag, is_sidechain)
+        {
             meta.turn_count += 1;
             awaiting_ai_group = true;
-        } else if awaiting_ai_group && entry_type == "assistant" && !is_sidechain {
+        } else if !is_inherited && awaiting_ai_group && entry_type == "assistant" && !is_sidechain {
             let model_str = raw
                 .get("message")
                 .and_then(|m| m.get("model"))
@@ -596,7 +606,8 @@ pub(crate) fn scan_session_metadata(path: &str) -> SessionMetadata {
 
         // --- Token accumulation (dedup streaming entries by requestId) ---
         // Include sidechain entries so cost reflects all API calls.
-        if entry_type == "assistant" {
+        // Skip inherited entries — their tokens were already counted in the parent session.
+        if !is_inherited && entry_type == "assistant" {
             let model_str = raw
                 .get("message")
                 .and_then(|m| m.get("model"))
@@ -672,7 +683,8 @@ pub(crate) fn scan_session_metadata(path: &str) -> SessionMetadata {
         }
 
         // --- Ongoing detection ---
-        if entry_type == "assistant" && !is_sidechain {
+        // Skip inherited entries — they represent past activity in the parent session.
+        if !is_inherited && entry_type == "assistant" && !is_sidechain {
             scan_ongoing_assistant(
                 &raw,
                 &mut activity_index,
@@ -682,7 +694,7 @@ pub(crate) fn scan_session_metadata(path: &str) -> SessionMetadata {
                 &mut shutdown_tool_ids,
                 &mut pending_tool_ids,
             );
-        } else if entry_type == "user" {
+        } else if !is_inherited && entry_type == "user" {
             scan_ongoing_user(
                 &raw,
                 &mut activity_index,
@@ -695,7 +707,8 @@ pub(crate) fn scan_session_metadata(path: &str) -> SessionMetadata {
         }
 
         // --- Preview extraction ---
-        if preview_found || lines_read > MAX_PREVIEW_LINES || entry_type != "user" {
+        // Skip inherited entries so first_message reflects the fork's own first prompt.
+        if preview_found || lines_read > MAX_PREVIEW_LINES || entry_type != "user" || is_inherited {
             continue;
         }
 
@@ -928,6 +941,11 @@ impl IncrementalTokenScanner {
             Ok(v) => v,
             Err(_) => return,
         };
+
+        // Skip inherited entries (v2.1.118+ fork format) — tokens were counted in the parent.
+        if raw.get("forkedFrom").is_some() {
+            return;
+        }
 
         let entry_type = raw.get("type").and_then(|v| v.as_str()).unwrap_or("");
         if entry_type != "assistant" {
@@ -1592,6 +1610,384 @@ mod tests {
         assert!(
             has_hook,
             "PreToolUse:Write attachment hook must survive the live-chain filter"
+        );
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    // --- Issue #60: forked session compat (v2.1.118+) ---
+
+    /// Build a JSONL line for an inherited (forked) entry with forkedFrom field.
+    fn forked_user_line(uuid: &str, parent_uuid: &str, timestamp: &str, content: &str) -> String {
+        format!(
+            "{{\"type\":\"user\",\"uuid\":\"{uuid}\",\"parentUuid\":\"{parent_uuid}\",\"isSidechain\":false,\
+            \"timestamp\":\"{timestamp}\",\"forkedFrom\":{{\"sessionId\":\"parent-session\",\"messageUuid\":\"{uuid}\"}},\
+            \"message\":{{\"role\":\"user\",\"content\":\"{content}\"}}}}\n"
+        )
+    }
+
+    fn forked_assistant_line(
+        uuid: &str,
+        parent_uuid: &str,
+        timestamp: &str,
+        input_tokens: i64,
+        output_tokens: i64,
+    ) -> String {
+        format!(
+            "{{\"type\":\"assistant\",\"uuid\":\"{uuid}\",\"parentUuid\":\"{parent_uuid}\",\"isSidechain\":false,\
+            \"timestamp\":\"{timestamp}\",\"requestId\":\"req-{uuid}\",\"forkedFrom\":{{\"sessionId\":\"parent-session\",\"messageUuid\":\"{uuid}\"}},\
+            \"message\":{{\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4\",\"stop_reason\":\"end_turn\",\
+            \"usage\":{{\"input_tokens\":{input_tokens},\"output_tokens\":{output_tokens},\
+            \"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}}}}\n"
+        )
+    }
+
+    fn new_user_line(uuid: &str, parent_uuid: &str, timestamp: &str, content: &str) -> String {
+        format!(
+            "{{\"type\":\"user\",\"uuid\":\"{uuid}\",\"parentUuid\":\"{parent_uuid}\",\"isSidechain\":false,\
+            \"timestamp\":\"{timestamp}\",\
+            \"message\":{{\"role\":\"user\",\"content\":\"{content}\"}}}}\n"
+        )
+    }
+
+    fn new_assistant_line(
+        uuid: &str,
+        parent_uuid: &str,
+        timestamp: &str,
+        input_tokens: i64,
+        output_tokens: i64,
+    ) -> String {
+        format!(
+            "{{\"type\":\"assistant\",\"uuid\":\"{uuid}\",\"parentUuid\":\"{parent_uuid}\",\"isSidechain\":false,\
+            \"timestamp\":\"{timestamp}\",\"requestId\":\"req-{uuid}\",\
+            \"message\":{{\"role\":\"assistant\",\"content\":[{{\"type\":\"text\",\"text\":\"reply\"}}],\
+            \"model\":\"claude-sonnet-4\",\"stop_reason\":\"end_turn\",\
+            \"usage\":{{\"input_tokens\":{input_tokens},\"output_tokens\":{output_tokens},\
+            \"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}}}}\n"
+        )
+    }
+
+    #[test]
+    fn forked_session_turn_count_excludes_inherited_entries() {
+        // Fork file: 2 inherited turns (from parent) + 1 new turn.
+        // scan_session_metadata must report turn_count=2 (user+AI pair = 1 turn counting
+        // method: user increments, then AI increments — so 1 user + 1 AI = 2).
+        // Wait, looking at the turn counting logic: user increments, then FIRST ai increments.
+        // For 1 new user + 1 new assistant = turn_count 2.
+        // Inherited: 2 user + 2 assistant = should all be skipped.
+        let tmp = env::temp_dir().join("tail-test-fork-turn-count");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let path = tmp.join("session.jsonl");
+
+        let mut content = String::new();
+        // Inherited entries (from parent session)
+        content.push_str(&forked_user_line(
+            "pu1",
+            "",
+            "2026-01-01T10:00:00Z",
+            "Parent question 1",
+        ));
+        content.push_str(&forked_assistant_line(
+            "pa1",
+            "pu1",
+            "2026-01-01T10:00:01Z",
+            100,
+            50,
+        ));
+        content.push_str(&forked_user_line(
+            "pu2",
+            "pa1",
+            "2026-01-01T10:01:00Z",
+            "Parent question 2",
+        ));
+        content.push_str(&forked_assistant_line(
+            "pa2",
+            "pu2",
+            "2026-01-01T10:01:01Z",
+            100,
+            50,
+        ));
+        // New fork entries
+        content.push_str(&new_user_line(
+            "fu1",
+            "pa2",
+            "2026-04-26T10:00:00Z",
+            "Fork question",
+        ));
+        content.push_str(&new_assistant_line(
+            "fa1",
+            "fu1",
+            "2026-04-26T10:00:01Z",
+            10,
+            5,
+        ));
+        std::fs::write(&path, &content).unwrap();
+
+        let meta = scan_session_metadata(path.to_str().unwrap());
+        // The turn counting pairs user+AI: 1 user increments to 1, then AI increments to 2.
+        assert_eq!(
+            meta.turn_count, 2,
+            "turn_count must only reflect the fork's own turns (1 user + 1 AI = 2)"
+        );
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn forked_session_first_message_excludes_inherited_entries() {
+        // Fork file: inherited entries first, then a new user message.
+        // first_msg must be the NEW fork question, not the inherited parent question.
+        let tmp = env::temp_dir().join("tail-test-fork-first-msg");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let path = tmp.join("session.jsonl");
+
+        let mut content = String::new();
+        content.push_str(&forked_user_line(
+            "pu1",
+            "",
+            "2026-01-01T10:00:00Z",
+            "Inherited parent question",
+        ));
+        content.push_str(&forked_assistant_line(
+            "pa1",
+            "pu1",
+            "2026-01-01T10:00:01Z",
+            100,
+            50,
+        ));
+        content.push_str(&new_user_line(
+            "fu1",
+            "pa1",
+            "2026-04-26T10:00:00Z",
+            "New fork question",
+        ));
+        content.push_str(&new_assistant_line(
+            "fa1",
+            "fu1",
+            "2026-04-26T10:00:01Z",
+            10,
+            5,
+        ));
+        std::fs::write(&path, &content).unwrap();
+
+        let meta = scan_session_metadata(path.to_str().unwrap());
+        assert!(
+            meta.first_msg.contains("New fork question"),
+            "first_msg must be the fork's own first message, got: {:?}",
+            meta.first_msg
+        );
+        assert!(
+            !meta.first_msg.contains("Inherited"),
+            "first_msg must not be from the inherited parent, got: {:?}",
+            meta.first_msg
+        );
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn forked_session_tokens_exclude_inherited_entries() {
+        // Fork file: inherited assistant entries (100+50 tokens each) + 1 new (10+5).
+        // total_tokens must be 15 (new only), not 215 (inherited + new).
+        let tmp = env::temp_dir().join("tail-test-fork-tokens");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let path = tmp.join("session.jsonl");
+
+        let mut content = String::new();
+        content.push_str(&forked_user_line(
+            "pu1",
+            "",
+            "2026-01-01T10:00:00Z",
+            "Parent question",
+        ));
+        content.push_str(&forked_assistant_line(
+            "pa1",
+            "pu1",
+            "2026-01-01T10:00:01Z",
+            100,
+            50,
+        ));
+        content.push_str(&new_user_line(
+            "fu1",
+            "pa1",
+            "2026-04-26T10:00:00Z",
+            "Fork question",
+        ));
+        content.push_str(&new_assistant_line(
+            "fa1",
+            "fu1",
+            "2026-04-26T10:00:01Z",
+            10,
+            5,
+        ));
+        std::fs::write(&path, &content).unwrap();
+
+        let meta = scan_session_metadata(path.to_str().unwrap());
+        assert_eq!(
+            meta.input_tokens, 10,
+            "input_tokens must only count the fork's own entries"
+        );
+        assert_eq!(
+            meta.output_tokens, 5,
+            "output_tokens must only count the fork's own entries"
+        );
+        assert_eq!(
+            meta.total_tokens, 15,
+            "total_tokens must only count the fork's own entries (not 215)"
+        );
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn forked_session_duration_excludes_inherited_timestamps() {
+        // Inherited entries have timestamps from Jan 2026; new entries from Apr 2026.
+        // Duration must be calculated from the FIRST new entry's timestamp, not the
+        // inherited entries' much-older timestamps.
+        let tmp = env::temp_dir().join("tail-test-fork-duration");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let path = tmp.join("session.jsonl");
+
+        let mut content = String::new();
+        content.push_str(&forked_user_line(
+            "pu1",
+            "",
+            "2026-01-01T10:00:00Z",
+            "Parent question",
+        ));
+        content.push_str(&forked_assistant_line(
+            "pa1",
+            "pu1",
+            "2026-01-01T10:00:01Z",
+            100,
+            50,
+        ));
+        // New fork entries 5 seconds apart
+        content.push_str(&new_user_line(
+            "fu1",
+            "pa1",
+            "2026-04-26T10:00:00Z",
+            "Fork question",
+        ));
+        content.push_str(&new_assistant_line(
+            "fa1",
+            "fu1",
+            "2026-04-26T10:00:05Z",
+            10,
+            5,
+        ));
+        std::fs::write(&path, &content).unwrap();
+
+        let meta = scan_session_metadata(path.to_str().unwrap());
+        // Duration should be ~5000ms (5 seconds between new entries), not months.
+        assert!(
+            meta.duration_ms < 60_000,
+            "duration_ms must reflect the fork's own activity (got {} ms, expected ~5000)",
+            meta.duration_ms
+        );
+        assert!(
+            meta.duration_ms >= 5000,
+            "duration_ms must span the fork's own entries (got {} ms)",
+            meta.duration_ms
+        );
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn forked_session_incremental_scanner_excludes_inherited_tokens() {
+        // IncrementalTokenScanner must also skip forkedFrom entries.
+        let tmp = env::temp_dir().join("tail-test-fork-incremental");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let path = tmp.join("session.jsonl");
+
+        let mut content = String::new();
+        content.push_str(&forked_assistant_line(
+            "pa1",
+            "pu1",
+            "2026-01-01T10:00:01Z",
+            200,
+            100,
+        ));
+        content.push_str(&new_assistant_line(
+            "fa1",
+            "fu1",
+            "2026-04-26T10:00:01Z",
+            20,
+            10,
+        ));
+        std::fs::write(&path, &content).unwrap();
+
+        let mut scanner = IncrementalTokenScanner::new();
+        let totals = scanner.scan_new_bytes(path.to_str().unwrap());
+        assert_eq!(
+            totals.input_tokens, 20,
+            "IncrementalTokenScanner must skip forkedFrom entries (got {})",
+            totals.input_tokens
+        );
+        assert_eq!(
+            totals.output_tokens, 10,
+            "IncrementalTokenScanner must skip forkedFrom entries (got {})",
+            totals.output_tokens
+        );
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn forked_session_conversation_view_includes_all_entries() {
+        // For the detailed conversation view (read_session_incremental), inherited entries
+        // SHOULD appear — they provide the fork's context. Only metadata is filtered.
+        let tmp = env::temp_dir().join("tail-test-fork-conv-view");
+        std::fs::create_dir_all(&tmp).unwrap();
+        let path = tmp.join("session.jsonl");
+
+        let mut content = String::new();
+        content.push_str(&forked_user_line(
+            "pu1",
+            "",
+            "2026-01-01T10:00:00Z",
+            "Inherited question",
+        ));
+        content.push_str(&forked_assistant_line(
+            "pa1",
+            "pu1",
+            "2026-01-01T10:00:01Z",
+            100,
+            50,
+        ));
+        content.push_str(&new_user_line(
+            "fu1",
+            "pa1",
+            "2026-04-26T10:00:00Z",
+            "Fork question",
+        ));
+        content.push_str(&new_assistant_line(
+            "fa1",
+            "fu1",
+            "2026-04-26T10:00:01Z",
+            10,
+            5,
+        ));
+        std::fs::write(&path, &content).unwrap();
+
+        let (msgs, _, _) = read_session_incremental(path.to_str().unwrap(), 0).unwrap();
+        // All 4 entries should be shown (2 inherited + 2 new) for full conversation context.
+        let user_count = msgs
+            .iter()
+            .filter(|m| matches!(m, ClassifiedMsg::User(_)))
+            .count();
+        let ai_count = msgs
+            .iter()
+            .filter(|m| matches!(m, ClassifiedMsg::AI(_)))
+            .count();
+        assert_eq!(
+            user_count, 2,
+            "both inherited and new user messages must appear"
+        );
+        assert_eq!(
+            ai_count, 2,
+            "both inherited and new AI messages must appear"
         );
 
         std::fs::remove_dir_all(&tmp).ok();
