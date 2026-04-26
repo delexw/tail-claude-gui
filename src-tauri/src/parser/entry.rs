@@ -76,6 +76,19 @@ pub struct Entry {
     // `content`, not inside `message.content`.
     #[serde(default)]
     pub content: String,
+    // Present in forked session entries (v2.1.118+). When /fork branches a conversation,
+    // each inherited parent entry carries forkedFrom:{sessionId,messageUuid} to identify
+    // its origin. Entries without this field are newly added in the fork itself.
+    #[serde(default, rename = "forkedFrom")]
+    pub forked_from: Option<Value>,
+    // Present in type:"fork-pointer" entries (v2.1.118+). Claude Code writes a pointer entry
+    // when /fork is used, referencing the parent session instead of duplicating its contents.
+    #[serde(default, rename = "parentSessionId")]
+    pub parent_session_id: String,
+    // Present in type:"fork-pointer" entries (v2.1.118+). May carry the fork source location
+    // (e.g. leaf UUID within the parent session at which the fork was taken).
+    #[serde(default, rename = "forkSource")]
+    pub fork_source: Option<Value>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -245,6 +258,53 @@ mod tests {
         );
     }
 
+    // --- Issue #60: forkedFrom field compat (v2.1.118+) ---
+
+    #[test]
+    fn parse_entry_forked_from_field_is_captured() {
+        // v2.1.118+: when /fork branches a conversation, each inherited parent entry
+        // carries forkedFrom:{sessionId,messageUuid}. The field must be captured.
+        let line = json!({
+            "type": "user",
+            "uuid": "fork-entry-uuid",
+            "timestamp": "2026-04-26T10:00:00Z",
+            "message": {"role": "user", "content": "Hello"},
+            "forkedFrom": {
+                "sessionId": "parent-session-id",
+                "messageUuid": "fork-entry-uuid"
+            }
+        });
+        let bytes = serde_json::to_vec(&line).unwrap();
+        let entry = parse_entry(&bytes).expect("must parse forked entry");
+        assert!(entry.forked_from.is_some(), "forkedFrom must be captured");
+        let ff = entry.forked_from.as_ref().unwrap();
+        assert_eq!(
+            ff.get("sessionId").and_then(|v| v.as_str()),
+            Some("parent-session-id")
+        );
+        assert_eq!(
+            ff.get("messageUuid").and_then(|v| v.as_str()),
+            Some("fork-entry-uuid")
+        );
+    }
+
+    #[test]
+    fn parse_entry_without_forked_from_is_not_inherited() {
+        // Regular entries (not inherited from a fork parent) must have forked_from = None.
+        let line = json!({
+            "type": "user",
+            "uuid": "regular-uuid",
+            "timestamp": "2026-04-26T10:00:00Z",
+            "message": {"role": "user", "content": "Hello"}
+        });
+        let bytes = serde_json::to_vec(&line).unwrap();
+        let entry = parse_entry(&bytes).expect("must parse regular entry");
+        assert!(
+            entry.forked_from.is_none(),
+            "regular entry must not have forkedFrom"
+        );
+    }
+
     #[test]
     fn parse_entry_handles_null_parent_uuid() {
         // Subagent JSONL files write parentUuid: null for the first entry.
@@ -261,5 +321,41 @@ mod tests {
         let entry = parse_entry(&bytes).expect("must parse despite null parentUuid");
         assert_eq!(entry.parent_uuid, "");
         assert_eq!(entry.entry_type, "user");
+    }
+
+    // --- Issue #60: fork-pointer entry (v2.1.118+) ---
+
+    #[test]
+    fn parse_entry_captures_fork_pointer_fields() {
+        // v2.1.118+: /fork writes a pointer entry with parentSessionId instead of duplicating
+        // the full parent conversation. parse_entry must capture the new fields.
+        let line = json!({
+            "type": "fork-pointer",
+            "uuid": "fork-ptr-uuid-001",
+            "parentSessionId": "parent-session-abc",
+            "forkSource": "leaf-uuid-xyz",
+            "timestamp": "2026-04-20T10:00:00Z"
+        });
+        let bytes = serde_json::to_vec(&line).unwrap();
+        let entry = parse_entry(&bytes).expect("must parse fork-pointer entry");
+        assert_eq!(entry.entry_type, "fork-pointer");
+        assert_eq!(entry.parent_session_id, "parent-session-abc");
+        assert!(entry.fork_source.is_some(), "forkSource must be captured");
+    }
+
+    #[test]
+    fn parse_entry_fork_pointer_without_uuid_returns_none() {
+        // A fork-pointer entry with no uuid (and no leafUuid) must be silently dropped.
+        let line = json!({
+            "type": "fork-pointer",
+            "parentSessionId": "parent-session-abc",
+            "forkSource": "leaf-uuid-xyz",
+            "timestamp": "2026-04-20T10:00:00Z"
+        });
+        let bytes = serde_json::to_vec(&line).unwrap();
+        assert!(
+            parse_entry(&bytes).is_none(),
+            "fork-pointer with no uuid must return None"
+        );
     }
 }
