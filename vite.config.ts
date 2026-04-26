@@ -6,6 +6,9 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [react()],
   clearScreen: false,
+  build: {
+    chunkSizeWarningLimit: 1500,
+  },
   server: {
     // VITE_PORT allows headless/TUI mode to use a different port to avoid
     // conflicting with an already-running web/desktop Vite instance.
