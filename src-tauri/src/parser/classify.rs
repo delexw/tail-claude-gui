@@ -124,6 +124,10 @@ const NOISE_ENTRY_TYPES: &[&str] = &[
     "file-history-snapshot",
     "queue-operation",
     "progress",
+    // v2.1.118+: /fork writes a compact pointer entry (type:"fork-context-ref") instead of
+    // duplicating the full parent conversation. The pointer has no message content — drop it
+    // silently so it never appears in the conversation display.
+    "fork-context-ref",
 ];
 
 const HARD_NOISE_TAGS: &[&str] = &["<local-command-caveat>", "<system-reminder>"];
@@ -1679,6 +1683,45 @@ mod tests {
                 other
             ),
         }
+    }
+
+    // --- Issue #60: fork-context-ref entry (v2.1.118+) is silently dropped ---
+
+    #[test]
+    fn classify_drops_fork_context_ref_entry() {
+        // v2.1.118+: /fork writes a compact pointer entry (type:"fork-context-ref") instead
+        // of duplicating the full parent conversation. classify must drop it silently.
+        let e = Entry {
+            entry_type: "fork-context-ref".to_string(),
+            uuid: "fork-ref-uuid-001".to_string(),
+            timestamp: "2026-04-20T10:00:00Z".to_string(),
+            ..Default::default()
+        };
+        assert!(
+            classify(e).is_none(),
+            "fork-context-ref entry must be silently dropped"
+        );
+    }
+
+    #[test]
+    fn classify_drops_fork_context_ref_even_with_message_role() {
+        // Extra safety: even if a fork-context-ref variant carries a message role, it must
+        // still be dropped because "fork-context-ref" is in NOISE_ENTRY_TYPES.
+        let e = Entry {
+            entry_type: "fork-context-ref".to_string(),
+            uuid: "fork-ref-uuid-002".to_string(),
+            timestamp: "2026-04-20T10:00:00Z".to_string(),
+            message: super::super::entry::EntryMessage {
+                role: "user".to_string(),
+                content: Some(serde_json::json!("should not be shown")),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert!(
+            classify(e).is_none(),
+            "fork-context-ref entry must be dropped even when message.role is set"
+        );
     }
 
     // --- Issue #37: document content block is recognised as user content ---

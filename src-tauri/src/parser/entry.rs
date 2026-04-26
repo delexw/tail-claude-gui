@@ -76,6 +76,18 @@ pub struct Entry {
     // `content`, not inside `message.content`.
     #[serde(default)]
     pub content: String,
+    // Present in forked session entries (pre-v2.1.118). When /fork branched a conversation,
+    // each duplicated parent entry carried forkedFrom:{sessionId,messageUuid} to identify
+    // its origin. Entries without this field are newly added in the fork itself.
+    #[serde(default, rename = "forkedFrom")]
+    pub forked_from: Option<Value>,
+    // Present in type:"fork-context-ref" entries (v2.1.118+). The session being forked from.
+    #[serde(default, rename = "forkedSessionId")]
+    pub forked_session_id: String,
+    // Present in type:"fork-context-ref" entries (v2.1.118+). The message uuid in the parent
+    // session up to which the fork context should be read.
+    #[serde(default, rename = "upToMessageId")]
+    pub up_to_message_id: String,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -122,10 +134,12 @@ impl Entry {
 }
 
 /// Parse a single JSONL line into an Entry.
-/// Returns None if the JSON is invalid or the entry has no UUID.
+/// Returns None if the JSON is invalid, the entry has no UUID, or the entry
+/// has no type (guards against empty entries written by async PostToolUse
+/// hooks in Claude Code pre-v2.1.119).
 pub fn parse_entry(line: &[u8]) -> Option<Entry> {
     let e: Entry = serde_json::from_slice(line).ok()?;
-    if e.uuid.is_empty() && e.leaf_uuid.is_empty() {
+    if (e.uuid.is_empty() && e.leaf_uuid.is_empty()) || e.entry_type.is_empty() {
         return None;
     }
     Some(e)
@@ -245,6 +259,73 @@ mod tests {
         );
     }
 
+    // --- Issue #60: forkedFrom field compat (v2.1.118+) ---
+
+    #[test]
+    fn parse_entry_forked_from_field_is_captured() {
+        // v2.1.118+: when /fork branches a conversation, each inherited parent entry
+        // carries forkedFrom:{sessionId,messageUuid}. The field must be captured.
+        let line = json!({
+            "type": "user",
+            "uuid": "fork-entry-uuid",
+            "timestamp": "2026-04-26T10:00:00Z",
+            "message": {"role": "user", "content": "Hello"},
+            "forkedFrom": {
+                "sessionId": "parent-session-id",
+                "messageUuid": "fork-entry-uuid"
+            }
+        });
+        let bytes = serde_json::to_vec(&line).unwrap();
+        let entry = parse_entry(&bytes).expect("must parse forked entry");
+        assert!(entry.forked_from.is_some(), "forkedFrom must be captured");
+        let ff = entry.forked_from.as_ref().unwrap();
+        assert_eq!(
+            ff.get("sessionId").and_then(|v| v.as_str()),
+            Some("parent-session-id")
+        );
+        assert_eq!(
+            ff.get("messageUuid").and_then(|v| v.as_str()),
+            Some("fork-entry-uuid")
+        );
+    }
+
+    #[test]
+    fn parse_entry_without_forked_from_is_not_inherited() {
+        // Regular entries (not inherited from a fork parent) must have forked_from = None.
+        let line = json!({
+            "type": "user",
+            "uuid": "regular-uuid",
+            "timestamp": "2026-04-26T10:00:00Z",
+            "message": {"role": "user", "content": "Hello"}
+        });
+        let bytes = serde_json::to_vec(&line).unwrap();
+        let entry = parse_entry(&bytes).expect("must parse regular entry");
+        assert!(
+            entry.forked_from.is_none(),
+            "regular entry must not have forkedFrom"
+        );
+    }
+
+    #[test]
+    fn parse_entry_with_uuid_but_empty_type_returns_none() {
+        // Async PostToolUse hooks in Claude Code pre-v2.1.119 could write entries
+        // that have a uuid but no type field.  These must be silently skipped.
+        let line = json!({
+            "uuid": "dead-beef-1234",
+            "timestamp": "2025-01-15T10:30:00Z",
+            "message": {"role": "user", "content": "hook output"}
+        });
+        let bytes = serde_json::to_vec(&line).unwrap();
+        assert!(parse_entry(&bytes).is_none());
+    }
+
+    #[test]
+    fn parse_entry_completely_empty_object_returns_none() {
+        // A completely empty JSONL entry {} has no uuid and no type — must be skipped.
+        let bytes = b"{}";
+        assert!(parse_entry(bytes).is_none());
+    }
+
     #[test]
     fn parse_entry_handles_null_parent_uuid() {
         // Subagent JSONL files write parentUuid: null for the first entry.
@@ -261,5 +342,41 @@ mod tests {
         let entry = parse_entry(&bytes).expect("must parse despite null parentUuid");
         assert_eq!(entry.parent_uuid, "");
         assert_eq!(entry.entry_type, "user");
+    }
+
+    // --- Issue #60: fork-context-ref entry (v2.1.118+) ---
+
+    #[test]
+    fn parse_entry_captures_fork_context_ref_fields() {
+        // v2.1.118+: /fork writes a type:"fork-context-ref" pointer entry with forkedSessionId
+        // and upToMessageId instead of duplicating the full parent conversation.
+        let line = json!({
+            "type": "fork-context-ref",
+            "uuid": "fork-ref-uuid-001",
+            "forkedSessionId": "parent-session-abc",
+            "upToMessageId": "leaf-uuid-xyz",
+            "timestamp": "2026-04-20T10:00:00Z"
+        });
+        let bytes = serde_json::to_vec(&line).unwrap();
+        let entry = parse_entry(&bytes).expect("must parse fork-context-ref entry");
+        assert_eq!(entry.entry_type, "fork-context-ref");
+        assert_eq!(entry.forked_session_id, "parent-session-abc");
+        assert_eq!(entry.up_to_message_id, "leaf-uuid-xyz");
+    }
+
+    #[test]
+    fn parse_entry_fork_context_ref_without_uuid_returns_none() {
+        // A fork-context-ref entry with no uuid (and no leafUuid) must be silently dropped.
+        let line = json!({
+            "type": "fork-context-ref",
+            "forkedSessionId": "parent-session-abc",
+            "upToMessageId": "leaf-uuid-xyz",
+            "timestamp": "2026-04-20T10:00:00Z"
+        });
+        let bytes = serde_json::to_vec(&line).unwrap();
+        assert!(
+            parse_entry(&bytes).is_none(),
+            "fork-context-ref with no uuid must return None"
+        );
     }
 }
