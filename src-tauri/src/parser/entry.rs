@@ -76,19 +76,18 @@ pub struct Entry {
     // `content`, not inside `message.content`.
     #[serde(default)]
     pub content: String,
-    // Present in forked session entries (v2.1.118+). When /fork branches a conversation,
-    // each inherited parent entry carries forkedFrom:{sessionId,messageUuid} to identify
+    // Present in forked session entries (pre-v2.1.118). When /fork branched a conversation,
+    // each duplicated parent entry carried forkedFrom:{sessionId,messageUuid} to identify
     // its origin. Entries without this field are newly added in the fork itself.
     #[serde(default, rename = "forkedFrom")]
     pub forked_from: Option<Value>,
-    // Present in type:"fork-pointer" entries (v2.1.118+). Claude Code writes a pointer entry
-    // when /fork is used, referencing the parent session instead of duplicating its contents.
-    #[serde(default, rename = "parentSessionId")]
-    pub parent_session_id: String,
-    // Present in type:"fork-pointer" entries (v2.1.118+). May carry the fork source location
-    // (e.g. leaf UUID within the parent session at which the fork was taken).
-    #[serde(default, rename = "forkSource")]
-    pub fork_source: Option<Value>,
+    // Present in type:"fork-context-ref" entries (v2.1.118+). The session being forked from.
+    #[serde(default, rename = "forkedSessionId")]
+    pub forked_session_id: String,
+    // Present in type:"fork-context-ref" entries (v2.1.118+). The message uuid in the parent
+    // session up to which the fork context should be read.
+    #[serde(default, rename = "upToMessageId")]
+    pub up_to_message_id: String,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -345,39 +344,39 @@ mod tests {
         assert_eq!(entry.entry_type, "user");
     }
 
-    // --- Issue #60: fork-pointer entry (v2.1.118+) ---
+    // --- Issue #60: fork-context-ref entry (v2.1.118+) ---
 
     #[test]
-    fn parse_entry_captures_fork_pointer_fields() {
-        // v2.1.118+: /fork writes a pointer entry with parentSessionId instead of duplicating
-        // the full parent conversation. parse_entry must capture the new fields.
+    fn parse_entry_captures_fork_context_ref_fields() {
+        // v2.1.118+: /fork writes a type:"fork-context-ref" pointer entry with forkedSessionId
+        // and upToMessageId instead of duplicating the full parent conversation.
         let line = json!({
-            "type": "fork-pointer",
-            "uuid": "fork-ptr-uuid-001",
-            "parentSessionId": "parent-session-abc",
-            "forkSource": "leaf-uuid-xyz",
+            "type": "fork-context-ref",
+            "uuid": "fork-ref-uuid-001",
+            "forkedSessionId": "parent-session-abc",
+            "upToMessageId": "leaf-uuid-xyz",
             "timestamp": "2026-04-20T10:00:00Z"
         });
         let bytes = serde_json::to_vec(&line).unwrap();
-        let entry = parse_entry(&bytes).expect("must parse fork-pointer entry");
-        assert_eq!(entry.entry_type, "fork-pointer");
-        assert_eq!(entry.parent_session_id, "parent-session-abc");
-        assert!(entry.fork_source.is_some(), "forkSource must be captured");
+        let entry = parse_entry(&bytes).expect("must parse fork-context-ref entry");
+        assert_eq!(entry.entry_type, "fork-context-ref");
+        assert_eq!(entry.forked_session_id, "parent-session-abc");
+        assert_eq!(entry.up_to_message_id, "leaf-uuid-xyz");
     }
 
     #[test]
-    fn parse_entry_fork_pointer_without_uuid_returns_none() {
-        // A fork-pointer entry with no uuid (and no leafUuid) must be silently dropped.
+    fn parse_entry_fork_context_ref_without_uuid_returns_none() {
+        // A fork-context-ref entry with no uuid (and no leafUuid) must be silently dropped.
         let line = json!({
-            "type": "fork-pointer",
-            "parentSessionId": "parent-session-abc",
-            "forkSource": "leaf-uuid-xyz",
+            "type": "fork-context-ref",
+            "forkedSessionId": "parent-session-abc",
+            "upToMessageId": "leaf-uuid-xyz",
             "timestamp": "2026-04-20T10:00:00Z"
         });
         let bytes = serde_json::to_vec(&line).unwrap();
         assert!(
             parse_entry(&bytes).is_none(),
-            "fork-pointer with no uuid must return None"
+            "fork-context-ref with no uuid must return None"
         );
     }
 }
