@@ -1,5 +1,5 @@
 import type { DisplayMessage } from "../types";
-import { shortModel, formatExactTime, firstLine, truncate } from "../lib/format";
+import { shortModel, formatExactTime, firstNLines } from "../lib/format";
 import { getModelColor } from "../lib/theme";
 import { StatsBar, statsFromMessage } from "./StatsBar";
 import { ClaudeIcon, UserIcon, SystemIcon, WarningIcon, ForwardIcon } from "./Icons";
@@ -39,7 +39,7 @@ export function MessageItem({
   const model = msg.model ? shortModel(msg.model) : "";
   const modelColor = msg.model ? getModelColor(msg.model) : undefined;
   const time = formatExactTime(msg.timestamp);
-  const contentPreview = isExpanded ? msg.content : truncate(firstLine(msg.content), 200);
+  const contentPreview = isExpanded ? msg.content : firstNLines(msg.content, 12);
   const stats = statsFromMessage(msg);
 
   return (

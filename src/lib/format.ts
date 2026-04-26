@@ -193,6 +193,14 @@ export function firstLine(text: string): string {
 }
 
 /**
+ * Returns the first n lines of text.
+ */
+export function firstNLines(text: string, n: number): string {
+  const lines = text.split("\n");
+  return lines.slice(0, n).join("\n");
+}
+
+/**
  * Pretty-prints a JSON string. Returns the original string on parse failure.
  */
 export function formatJson(input: string): string {

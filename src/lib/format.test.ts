@@ -13,6 +13,7 @@ import {
   groupByDate,
   truncate,
   firstLine,
+  firstNLines,
   formatJson,
   fenceInlineJson,
   projectKey,
@@ -452,6 +453,31 @@ describe("firstLine", () => {
 
   it("handles single newline", () => {
     expect(firstLine("\n")).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// firstNLines
+// ---------------------------------------------------------------------------
+describe("firstNLines", () => {
+  it("returns full text when fewer lines than n", () => {
+    expect(firstNLines("hello world", 12)).toBe("hello world");
+  });
+
+  it("returns first n lines when more lines present", () => {
+    const text = Array.from({ length: 15 }, (_, i) => `line${i + 1}`).join("\n");
+    const result = firstNLines(text, 12);
+    expect(result).toBe(
+      "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\nline11\nline12",
+    );
+  });
+
+  it("handles empty string", () => {
+    expect(firstNLines("", 12)).toBe("");
+  });
+
+  it("returns first line when n=1", () => {
+    expect(firstNLines("first\nsecond", 1)).toBe("first");
   });
 });
 

@@ -33,6 +33,10 @@
   --context-warn: #ff8700;
   --context-crit: #ff0000;
 
+  /* Tool call section accents */
+  --token-input: #5f87af;
+  --token-output: #5faf5f;
+
   /* Permission pills */
   --pill-bypass: #ff0000;
   --pill-accept-edits: #af5fff;
@@ -1582,11 +1586,19 @@ body {
 
 .detail-item__section-title {
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.05em;
   margin-bottom: 4px;
+}
+
+.detail-item__section--input .detail-item__section-title {
+  color: var(--token-input);
+}
+
+.detail-item__section--output .detail-item__section-title {
+  color: var(--token-output);
 }
 
 .detail-item__text {
@@ -1618,7 +1630,8 @@ body {
 }
 
 .detail-item__json {
-  background: var(--bg);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
   padding: 8px;
   border-radius: 3px;
   overflow-x: auto;

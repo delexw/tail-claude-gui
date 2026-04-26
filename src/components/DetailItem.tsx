@@ -182,7 +182,7 @@ function DetailItemBody({ item }: { item: DisplayItem }) {
       return (
         <div className="detail-item__body">
           {item.tool_input && (
-            <div className="detail-item__section">
+            <div className="detail-item__section detail-item__section--input">
               <div className="detail-item__section-title">Input</div>
               <div className="detail-item__json">
                 <pre>
@@ -192,8 +192,8 @@ function DetailItemBody({ item }: { item: DisplayItem }) {
             </div>
           )}
           {item.tool_result && (
-            <div className="detail-item__section">
-              <div className="detail-item__section-title">Result</div>
+            <div className="detail-item__section detail-item__section--output">
+              <div className="detail-item__section-title">Output</div>
               <div
                 className={`detail-item__text${item.tool_error ? " detail-item__text--error" : ""}`}
               >

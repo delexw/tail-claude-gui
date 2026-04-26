@@ -198,7 +198,7 @@ describe("DetailItem", () => {
       />,
     );
     expect(screen.getByText("Input")).toBeInTheDocument();
-    expect(screen.getByText("Result")).toBeInTheDocument();
+    expect(screen.getByText("Output")).toBeInTheDocument();
     expect(screen.getByText("file content here")).toBeInTheDocument();
   });
 
