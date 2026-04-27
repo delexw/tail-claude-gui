@@ -59,10 +59,6 @@ export function MessageList({
       {messages.length === 0 && <div className="message-list__empty">No messages loaded</div>}
       {ordered.map((i) => {
         const msg = messages[i];
-        if (msg.role === "compact") {
-          return <CompactSeparator key={i} content={msg.content} />;
-        }
-
         const isSelected = i === selectedIndex;
         const isLast = i === messages.length - 1;
 
@@ -80,18 +76,6 @@ export function MessageList({
           />
         );
       })}
-    </div>
-  );
-}
-
-function CompactSeparator({ content }: { content: string }) {
-  return (
-    <div className="compact-separator">
-      <div className="compact-separator__line">
-        <span className="compact-separator__rule" />
-        <span>{content}</span>
-        <span className="compact-separator__rule" />
-      </div>
     </div>
   );
 }

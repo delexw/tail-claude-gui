@@ -605,17 +605,6 @@ function AgentListColumn({
       <div className="agent-panel__content">
         <div className="agent-panel__list" ref={listRef}>
           {messages.map((msg, i) => {
-            if (msg.role === "compact") {
-              return (
-                <div key={`compact-${msg.timestamp}`} className="compact-separator">
-                  <div className="compact-separator__line">
-                    <span className="compact-separator__rule" />
-                    <span>{msg.content}</span>
-                    <span className="compact-separator__rule" />
-                  </div>
-                </div>
-              );
-            }
             const isSelected = i === selectedMsg;
             const isExpanded = expandedSet.has(i);
             const isLast = i === messages.length - 1;
