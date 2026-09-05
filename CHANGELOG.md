@@ -3,11 +3,21 @@
 All notable changes to claude-code-trace are documented here. Versions follow
 [semantic versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.14.0] — 2026-09-06
+
+This release closes the biggest hole in the local backend: until now anything running on your
+machine could talk to the HTTP API, and every `/api/*` route now requires a shared token
+instead. The rest is keeping pace with Claude Code — sessions whose transcripts were silently
+spliced together by a pre-v2.1.251 bug are now flagged rather than shown as one conversation,
+subagent failures and interrupted tool calls stop disappearing from the view, and the project
+tree nests worktrees by their real path instead of guessing from a folder name that a host can
+now rename.
 
 ### Added
 
-- **The local HTTP API now only answers accepted clients.** Every `/api/*` route requires a
+- **The local HTTP API now only answers accepted clients**
+  ([`f205651`](https://github.com/delexw/claude-code-trace/commit/f205651),
+  [`875dc07`](https://github.com/delexw/claude-code-trace/commit/875dc07)). Every `/api/*` route requires a
   shared secret token. Until now the only gate was a CORS allowlist, which protects browsers and
   nothing else: any local process — or any LAN host, when the Docker image binds `0.0.0.0` —
   could read session transcripts, rewrite `settings.json`, add CORS origins, or trigger the
@@ -23,6 +33,74 @@ All notable changes to claude-code-trace are documented here. Versions follow
   IP or reverse-proxy hostname must add that origin to `CCTRACE_ALLOWED_ORIGINS` for the cookie to
   be issued — the cookie is only handed to allowlisted `Host`s so a DNS-rebinding page can't
   collect it.
+
+### Fixed
+
+- **Transcripts that Claude Code spliced together are now flagged**
+  ([`7e9c911`](https://github.com/delexw/claude-code-trace/commit/7e9c911)). Before
+  v2.1.251, changing directory mid-session could move a transcript onto a filename
+  already used by an unrelated session with the same session id, quietly merging two
+  conversations into one file. Those sessions used to render as a single continuous
+  conversation with no hint that half of it belonged to something else. The scanner now
+  recognises the signature — a main-chain entry whose parent is missing, landing exactly
+  where the working directory, branch or timestamp order jumps — and shows an integrity
+  warning in both the session picker and the open session's info bar. Checked against 93
+  real session files with no false positives.
+
+- **Worktrees nest by their real path in the project tree**
+  ([`8619622`](https://github.com/delexw/claude-code-trace/commit/8619622)). Claude Code
+  v2.1.234 lets a host name a project's transcript folder anything it likes via
+  `CLAUDE_CODE_PROJECT_DIR_NAME`, and the sidebar was deciding what nests under what by
+  string-matching that folder name. Under an assigned name, unrelated projects could end
+  up nested together and related ones could fail to nest at all. The tree now uses the
+  real working directory recorded in each session. This also fixes ordinary paths that
+  merely look nested — `/home/user/backend` and `/home/user/backend-v2` are siblings, and
+  are finally treated as such.
+
+- **Interrupted tool calls no longer look like the conversation just stopped**
+  ([`9962c5f`](https://github.com/delexw/claude-code-trace/commit/9962c5f)). From
+  v2.1.236 Claude Code stops writing an interrupt marker or a synthetic denial result
+  when a print/SDK session is killed mid tool call — the transcript simply ends on a
+  `tool_use` with nothing after it. The backend already understood this, but nothing in
+  the UI said so, so the session appeared to trail off for no reason. Those calls now
+  carry a **pending** badge next to the existing orphan badge.
+
+- **Subagent failures are visible again**
+  ([`240aa5d`](https://github.com/delexw/claude-code-trace/commit/240aa5d)). In v2.1.247
+  a subagent retries down the session's fallback model chain after a model 404, and when
+  every fallback is exhausted the `Task` result becomes a structured error object. That
+  object was being dropped during classification, and the Subagent detail panel never
+  rendered tool results at all — so the failure was invisible on both the desktop/web UI
+  and the TUI. The error now survives into the rendered result on every surface, with a
+  warning icon on the item.
+
+- **Two tool calls in one message no longer collapse into one**
+  ([`56b2815`](https://github.com/delexw/claude-code-trace/commit/56b2815)). Third-party
+  `ANTHROPIC_BASE_URL` proxies can stream a `tool_use` block with no `id`. Every such
+  block used to share the same empty key, so all but the last one lost its matching
+  result. Each now gets a stable placeholder id scoped to its entry and position, so the
+  calls render separately and, in the worst case, degrade to an orphan result rather than
+  silently swallowing one another.
+
+- **Background-task notifications between turns are no longer dropped**
+  ([`d1064f5`](https://github.com/delexw/claude-code-trace/commit/d1064f5)). Since
+  v2.1.234 these arrive wrapped in `<system-reminder>` tags, and anything fully wrapped
+  in those tags was treated as noise and discarded — taking the task's completed, failed
+  or killed status with it. The wrapper is now unwrapped before the noise check, so the
+  notification shows up as a System message with the right status. Plain reminders with
+  nothing inside are still dropped.
+
+- **React rendering correctness across the UI**
+  ([`3c7e1c2`](https://github.com/delexw/claude-code-trace/commit/3c7e1c2),
+  [`7f90c2a`](https://github.com/delexw/claude-code-trace/commit/7f90c2a)). A newer
+  oxlint surfaced 23 real violations: refs written during render, and effects that
+  clamped an out-of-range index only after a first bad render. The keyboard, event,
+  visible-session and message-detail hooks now write their refs after commit, and the
+  selected-message and debug-viewer indexes are derived during render so every read in a
+  pass agrees. The message detail panel also stops restoring a stale scroll position when
+  a panel is swapped at the same depth.
+
+[0.14.0]: https://github.com/delexw/claude-code-trace/releases/tag/v0.14.0
 
 ## [0.13.0] — 2026-08-20
 
