@@ -350,12 +350,15 @@ between Tauri IPC and HTTP fetch/EventSource at runtime.
 
 In HTTP mode every call must prove the browser is an accepted client (see
 [04-http-api.md — Authentication](04-http-api.md#authentication)). `src/lib/apiToken.ts` holds
-the shared token: in `cctrace --web` the Vite plugin in `vite.config.ts` injects it as
-`import.meta.env.VITE_API_TOKEN` (serve-time only); `invoke.ts` sends it as `X-CCTrace-Token` and
-`listen.ts` appends `?token=` to the `EventSource` URL. In Docker the value is empty and the
-server's same-origin cookie does the job. A 401 rejects with `ApiAuthError`, which `App` shows as
-a top-level banner instead of opening Settings. Settings → API access → Regenerate calls
-`setApiToken()` and `reconnectSse()` so the current tab keeps working after a rotation.
+the shared token: in `cctrace --web` the `cctrace-api-token` plugin in `vite.config.ts` serves it as
+the virtual module `virtual:cctrace-api-token` (`""` in production builds and under vitest, which
+stubs it in `vitest.config.ts`); `invoke.ts` sends it as `X-CCTrace-Token` and `listen.ts` appends
+`?token=` to the `EventSource` URL. In Docker the value is empty and the server's same-origin cookie
+does the job. A 401 rejects with `ApiAuthError`, which `App` shows as a top-level banner instead of
+opening Settings. `setApiToken()` notifies `onApiTokenChange` subscribers only when the value really
+changes; `listen.ts` subscribes and reopens its stream, so the SSE connection follows the token whether
+the rotation came from Settings → Regenerate in this tab or was pushed over HMR because another process
+rewrote the file. The dev server is never restarted for a rotation.
 
 ```mermaid
 flowchart LR

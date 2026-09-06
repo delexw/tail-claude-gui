@@ -39,4 +39,21 @@ describe("apiToken", () => {
     setApiToken(undefined);
     expect(getApiToken()).toBeNull();
   });
+
+  it("notifies subscribers only when the token actually changes", async () => {
+    const { onApiTokenChange } = await import("./apiToken");
+    const seen: (string | null)[] = [];
+    const unsubscribe = onApiTokenChange((t) => seen.push(t));
+
+    setApiToken("a");
+    setApiToken("a"); // no-op
+    setApiToken(""); // clears → null
+    setApiToken(undefined); // still null, no-op
+    setApiToken("b");
+    expect(seen).toEqual(["a", null, "b"]);
+
+    unsubscribe();
+    setApiToken("c");
+    expect(seen).toEqual(["a", null, "b"]);
+  });
 });

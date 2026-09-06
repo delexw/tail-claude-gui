@@ -436,10 +436,13 @@ still 404 rather than 401.
 ### How each client gets the token
 
 - **Web/dev mode** (`cctrace --web`, Vite on 1420 → API on 11423): the `cctrace-api-token` Vite
-  plugin in `vite.config.ts` reads the token file at _serve_ time and injects it as
-  `import.meta.env.VITE_API_TOKEN` (never into a production build). `src/lib/apiToken.ts` holds it;
-  `invoke.ts` sends the header and `listen.ts` appends `?token=`. The plugin watches the file and
-  restarts the dev server when it changes.
+  plugin in `vite.config.ts` reads the token file and serves it as the virtual module
+  `virtual:cctrace-api-token` — `""` in production builds, so a bundle never contains a token.
+  `src/lib/apiToken.ts` imports it; `invoke.ts` sends the header and `listen.ts` appends `?token=`.
+  When the file changes on disk (Regenerate from this tab, another tab, or another process) the plugin
+  invalidates the module and pushes it over HMR; `apiToken.ts` accepts the update and every open tab
+  adopts the new token in place — no dev-server restart and no page reload (a restart would make Vite's
+  client full-reload the page and tear down the Settings modal the user just clicked in).
 - **Docker / same-origin** (`CCTRACE_STATIC_DIR` set): `auth::attach_token_cookie` wraps the static
   fallback and adds `Set-Cookie: cctrace_token=<token>; Path=/; HttpOnly; SameSite=Strict` to
   `text/html` responses — but **only when the request `Host` is allowlisted**: `localhost`,
