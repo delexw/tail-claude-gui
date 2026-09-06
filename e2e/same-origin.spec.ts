@@ -45,8 +45,12 @@ test.describe("HTTP API without a browser", () => {
     });
     expect(viaBearer.status()).toBe(200);
 
+    // Flip the last hex digit so the forged token always differs (replacing it
+    // with a fixed "0" collided with the real token one run in sixteen).
+    const forged = `${token.slice(0, -1)}${token.endsWith("0") ? "1" : "0"}`;
+    expect(forged).not.toBe(token);
     const wrong = await request.get("/api/settings", {
-      headers: { "X-CCTrace-Token": `${token.slice(0, -1)}0` },
+      headers: { "X-CCTrace-Token": forged },
     });
     expect(wrong.status()).toBe(401);
   });
