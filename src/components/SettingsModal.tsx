@@ -1,8 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "../lib/invoke";
-import { isTauri } from "../lib/isTauri";
 import { setApiToken as setLiveApiToken } from "../lib/apiToken";
-import { reconnectSse } from "../lib/listen";
 import { PopoutModal } from "./PopoutModal";
 import { FONT_SCALE_PRESETS, formatFontScale } from "../lib/fontScale";
 
@@ -183,10 +181,10 @@ export function SettingsModal({
     try {
       const res = await invoke<SettingsResponse>("regenerate_api_token");
       applyResponse(res);
-      // Keep this tab working: send the new token from now on and reopen the
-      // SSE stream, which was authenticated with the old one.
+      // Keep this tab working: send the new token from now on. lib/listen.ts
+      // subscribes to this change and reopens the SSE stream, which was
+      // authenticated with the old token.
       setLiveApiToken(res.api_token);
-      if (!isTauri) reconnectSse();
       setTokenNotice("Token regenerated — update the TUI and any scripts that used the old one.");
     } catch (err) {
       setError(String(err));

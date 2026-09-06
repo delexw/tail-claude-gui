@@ -6,10 +6,7 @@ const mockInvoke = vi.fn();
 vi.mock("../lib/invoke", () => ({
   invoke: (...args: unknown[]) => mockInvoke(...args),
 }));
-const mockReconnectSse = vi.fn();
-vi.mock("../lib/listen", () => ({
-  reconnectSse: () => mockReconnectSse(),
-}));
+import { getApiToken, setApiToken } from "../lib/apiToken";
 
 const DEFAULT_DIR = "/Users/x/.claude/projects";
 
@@ -35,6 +32,7 @@ describe("SettingsModal", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    setApiToken(null);
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_settings") return Promise.resolve(makeSettings(null));
       if (cmd === "set_projects_dir") return Promise.resolve(makeSettings(null));
@@ -462,7 +460,9 @@ describe("SettingsModal", () => {
     await waitFor(() =>
       expect((screen.getByLabelText("API token") as HTMLInputElement).value).toBe("new-token"),
     );
-    expect(mockReconnectSse).toHaveBeenCalled();
+    // The live token this tab sends from now on was swapped (lib/listen.ts
+    // reopens the SSE stream off this same change).
+    expect(getApiToken()).toBe("new-token");
     expect(screen.getByText(/Token regenerated/)).toBeInTheDocument();
     expect(screen.getByText("Regenerate")).toBeInTheDocument();
     // Regeneration is independent of Save — the modal stays open.
@@ -481,7 +481,7 @@ describe("SettingsModal", () => {
     fireEvent.click(screen.getByText("Regenerate"));
     fireEvent.click(screen.getByText("Confirm regenerate?"));
     await waitFor(() => expect(screen.getByText(/rotation failed/)).toBeInTheDocument());
-    expect(mockReconnectSse).not.toHaveBeenCalled();
+    expect(getApiToken()).toBeNull();
   });
 
   it("disables Regenerate when the token comes from CCTRACE_API_TOKEN", async () => {

@@ -78,18 +78,17 @@ describe("listen (web/SSE mode)", () => {
   it("reconnectSse closes the stream, reopens with the current token, and re-attaches listeners", async () => {
     const { setApiToken } = await import("./apiToken");
     const { listen, reconnectSse } = await import("./listen");
-    setApiToken("old");
+    setApiToken("tok");
     await listen("session-update", () => {});
     await listen("picker-refresh", () => {});
     expect(mockSource.addEventListener).toHaveBeenCalledTimes(2);
 
-    setApiToken("new");
     reconnectSse();
 
     expect(mockSource.close).toHaveBeenCalledTimes(1);
     expect(constructedUrls).toEqual([
-      "http://127.0.0.1:11423/api/events?token=old",
-      "http://127.0.0.1:11423/api/events?token=new",
+      "http://127.0.0.1:11423/api/events?token=tok",
+      "http://127.0.0.1:11423/api/events?token=tok",
     ]);
     // Both listeners were re-registered on the replacement connection.
     expect(mockSource.addEventListener).toHaveBeenCalledTimes(4);
@@ -120,5 +119,32 @@ describe("listen (web/SSE mode)", () => {
     // A later reconnect has nothing to re-attach and nothing open to replace.
     reconnectSse();
     expect(constructedUrls).toHaveLength(2);
+  });
+
+  it("reopens the stream with the new token when the live token changes", async () => {
+    const { setApiToken } = await import("./apiToken");
+    const { listen } = await import("./listen");
+    setApiToken("before");
+    await listen("session-update", () => {});
+    expect(constructedUrls).toEqual(["http://127.0.0.1:11423/api/events?token=before"]);
+
+    // A rotation — from Settings in this tab, or pushed over HMR because
+    // another process rewrote the file — must not leave the stream on the
+    // dead token.
+    setApiToken("after");
+    expect(mockSource.close).toHaveBeenCalledTimes(1);
+    expect(constructedUrls).toEqual([
+      "http://127.0.0.1:11423/api/events?token=before",
+      "http://127.0.0.1:11423/api/events?token=after",
+    ]);
+    expect(mockSource.addEventListener).toHaveBeenCalledTimes(2);
+  });
+
+  it("ignores a token change when nothing is listening", async () => {
+    const { setApiToken } = await import("./apiToken");
+    await import("./listen");
+    setApiToken("x");
+    expect(constructedUrls).toEqual([]);
+    expect(mockSource.close).not.toHaveBeenCalled();
   });
 });

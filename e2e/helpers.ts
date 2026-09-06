@@ -76,11 +76,10 @@ export async function regenerateToken(page: Page): Promise<string> {
   return value;
 }
 
-/** The Vite dev server restarts itself when the token file changes (see the
- * plugin in vite.config.ts). Polling for "is it up" races that restart, so
- * wait for the proof that it finished: the served `apiToken.ts` module now
- * has the new token baked in. Connection errors during the restart are
- * expected and swallowed. */
+/** The `cctrace-api-token` Vite plugin serves the token as a virtual module
+ * and invalidates it when the file changes. The file watcher has latency, so
+ * before asserting on a cold load, wait until the dev server serves the
+ * rotated value. */
 export function waitForInjectedToken(
   baseURL: string,
   token: string,
@@ -97,7 +96,7 @@ export function waitForInjectedToken(
       setTimeout(attempt, 250);
     };
     const attempt = () => {
-      fetch(`${baseURL}/src/lib/apiToken.ts`)
+      fetch(`${baseURL}/@id/__x00__virtual:cctrace-api-token`)
         .then(async (res) => {
           const body = await res.text();
           if (body.includes(token)) {

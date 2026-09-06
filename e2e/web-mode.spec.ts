@@ -5,6 +5,8 @@
  * on fetch calls and as a query parameter on the EventSource stream.
  */
 import { expect, test } from "@playwright/test";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { E2E } from "../playwright.config";
 import {
   expectSecretOnTestPath,
@@ -35,13 +37,15 @@ test("SSE stream carries the token as a query parameter", async ({ page }) => {
   expect(url.searchParams.get("token")).toBe(readToken(configDir));
 });
 
-test("Regenerate switches this tab to the new token on fetch and SSE", async ({
+test("Regenerate hot-swaps the token in this tab — no reload — and SSE + fetch follow", async ({
   page,
   baseURL,
 }) => {
   await page.goto("/");
   await expect(page.getByText(FIXTURE_FIRST_MESSAGE)).toBeVisible();
   const oldToken = readToken(configDir);
+  let loads = 0;
+  page.on("load", () => loads++);
 
   const reconnected = page.waitForRequest(
     (r) => r.url().startsWith(`${api}/api/events`) && !r.url().includes(oldToken),
@@ -52,17 +56,55 @@ test("Regenerate switches this tab to the new token on fetch and SSE", async ({
   expect(readToken(configDir)).toBe(newToken);
   expectSecretOnTestPath(configDir);
 
-  // listen.ts reopens the stream with the rotated token without a reload.
+  // listen.ts reopens the stream with the rotated token, without a reload.
   expect(new URL((await reconnected).url()).searchParams.get("token")).toBe(newToken);
 
-  // The Vite plugin watches the token file and restarts the dev server so a
-  // fresh page load gets the new VITE_API_TOKEN baked in. Wait for that to
-  // land, then prove a cold load authenticates with the rotated token.
+  // The plugin hot-swaps the virtual token module over HMR when the file
+  // changes. Wait for the dev server to serve the rotated value, then prove
+  // the page was NOT reloaded meanwhile: the Settings modal the user clicked
+  // in is still open, showing the new token. (The dev server used to restart
+  // here, and Vite's client full-reloaded the page — exactly what CI caught.)
   await waitForInjectedToken(baseURL!, newToken);
+  expect(loads).toBe(0);
+  await expect(page.getByLabel("API token")).toHaveValue(newToken);
+  await expect(page.getByText(/Token regenerated/)).toBeVisible();
+
+  // A cold load authenticates with the rotated token straight away.
   const nextFetch = page.waitForRequest(
     (r) => r.url().startsWith(`${api}/api/`) && !r.url().includes("/api/events"),
   );
   await page.goto("/");
   expect((await nextFetch).headers()["x-cctrace-token"]).toBe(newToken);
   await expect(page.getByText(FIXTURE_FIRST_MESSAGE)).toBeVisible();
+});
+
+test("a rotation by another process reaches an open tab over HMR", async ({ page, baseURL }) => {
+  await page.goto("/");
+  await expect(page.getByText(FIXTURE_FIRST_MESSAGE)).toBeVisible();
+  const oldToken = readToken(configDir);
+  let loads = 0;
+  page.on("load", () => loads++);
+
+  // Rotate from outside the browser, the way a second cctrace process (or
+  // `Regenerate` in another tab) would: rewrite the file the backend owns.
+  // The backend adopts it on the next mismatch; the dev server pushes it to
+  // this tab; the tab's SSE stream must come back on the new token.
+  const reconnected = page.waitForRequest(
+    (r) => r.url().startsWith(`${api}/api/events`) && !r.url().includes(oldToken),
+  );
+  const rotated = `${"e".repeat(32)}${Date.now().toString(16).padStart(32, "0")}`;
+  writeFileSync(join(configDir, "api-token"), `${rotated}\n`);
+
+  expect(new URL((await reconnected).url()).searchParams.get("token")).toBe(rotated);
+  await waitForInjectedToken(baseURL!, rotated);
+  expect(loads).toBe(0);
+
+  // …and the API accepts the tab's next call with the rotated token.
+  const nextFetch = page.waitForRequest(
+    (r) => r.url().startsWith(`${api}/api/`) && !r.url().includes("/api/events"),
+  );
+  await page.getByTitle("Settings").click();
+  const req = await nextFetch;
+  expect(req.headers()["x-cctrace-token"]).toBe(rotated);
+  expect((await req.response())?.status()).toBe(200);
 });

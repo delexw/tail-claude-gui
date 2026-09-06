@@ -7,7 +7,7 @@
 import { listen as tauriListen } from "@tauri-apps/api/event";
 import { isTauri } from "./isTauri";
 import { API_BASE } from "./config";
-import { withTokenQuery } from "./apiToken";
+import { onApiTokenChange, withTokenQuery } from "./apiToken";
 
 export type UnlistenFn = () => void;
 
@@ -48,15 +48,19 @@ function releaseSse(): void {
 
 /**
  * Drop the current SSE connection and open a fresh one carrying the *current*
- * token, re-attaching every registered listener. Called after Settings →
- * Regenerate: the old stream was authenticated with the old token and would
- * silently die on its next reconnect. No-op when nothing is listening.
+ * token, re-attaching every registered listener. The old stream was
+ * authenticated with the old token and would silently die on its next
+ * reconnect. No-op when nothing is listening.
  */
 export function reconnectSse(): void {
   if (!sseSource) return;
   sseSource.close();
   sseSource = openSource();
 }
+
+// Wherever the token changes — this tab's Regenerate, or a rotation by another
+// process pushed here over HMR (see lib/apiToken.ts) — the stream follows it.
+onApiTokenChange(() => reconnectSse());
 
 export async function listen<T>(
   event: string,
