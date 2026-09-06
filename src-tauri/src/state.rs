@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, RwLock};
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
@@ -98,6 +98,22 @@ pub struct AppState {
     session_light_cache: Mutex<Option<CachedLight>>,
 }
 
+/// The on-disk registry, when it is safe to adopt at runtime: the file must
+/// exist, parse, and still know every built-in client. A missing or emptied
+/// `clients.json` (someone "resetting" while the server runs) or a half-edited
+/// one must not lock every client out; startup handles those cases instead.
+fn load_adoptable_registry(root: &Path) -> Option<ClientRegistry> {
+    let path = crate::auth::registry_path(root);
+    if !path.exists() {
+        return None;
+    }
+    let on_disk = ClientRegistry::load(&path).ok()?;
+    clients::BUILTIN_NAMES
+        .iter()
+        .all(|name| on_disk.find_by_name(name).is_some())
+        .then_some(on_disk)
+}
+
 impl AppState {
     /// Everything auth-related is injected (see `crate::auth::resolve_auth`) so
     /// construction itself never touches the filesystem.
@@ -151,8 +167,14 @@ impl AppState {
         }
     }
 
-    fn config_root(&self) -> Option<PathBuf> {
-        self.config_root.read().ok().and_then(|g| g.clone())
+    /// `Ok(None)` when nothing is persisted (ephemeral key, tests). A poisoned
+    /// lock is an error rather than a silent "nothing to persist", so a
+    /// mutation can never report success without having been saved.
+    fn config_root(&self) -> Result<Option<PathBuf>, String> {
+        self.config_root
+            .read()
+            .map(|g| g.clone())
+            .map_err(|_| "config root lock poisoned".to_string())
     }
 
     /// Clone of the live auth mode, for building `SettingsResponse`.
@@ -188,11 +210,49 @@ impl AppState {
             })
     }
 
-    fn persist_registry(&self, registry: &ClientRegistry) -> Result<(), String> {
-        match self.config_root() {
-            Some(root) => registry.save(&crate::auth::registry_path(&root)),
-            None => Ok(()),
+    /// Replace the in-memory registry with the on-disk one when they differ.
+    /// Must be called with the `clients` write guard held, so the compare and
+    /// the swap cannot interleave with a mutation (otherwise a concurrent
+    /// revoke could be undone by a refresh that loaded the file a moment
+    /// before it was saved). Also re-reads the `web-ui` credential file, which
+    /// follows the registry. Returns whether anything changed.
+    fn adopt_from_disk_locked(&self, guard: &mut ClientRegistry, root: &Path) -> bool {
+        let Some(on_disk) = load_adoptable_registry(root) else {
+            return false;
+        };
+        if *guard == on_disk {
+            return false;
         }
+        *guard = on_disk;
+        let web_ui =
+            crate::auth::read_trimmed(&crate::auth::builtin_credential_path(root, clients::WEB_UI));
+        if let Ok(mut g) = self.web_ui_credential.write() {
+            *g = web_ui;
+        }
+        true
+    }
+
+    /// Apply `mutate` to the registry and persist the result before it becomes
+    /// visible. Under the write lock the on-disk registry is adopted first, so
+    /// a change made by another cctrace process sharing the config dir (a
+    /// revoke, say) is not overwritten by this one's stale copy. If the save
+    /// fails, memory is left exactly as it was.
+    fn mutate_registry<T>(
+        &self,
+        mutate: impl FnOnce(&mut ClientRegistry) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let root = self.config_root()?;
+        let mut guard = self.clients.write().map_err(|e| e.to_string())?;
+        if let Some(root) = &root {
+            self.adopt_from_disk_locked(&mut guard, root);
+        }
+        let mut next = guard.clone();
+        let out = mutate(&mut next)?;
+        if let Some(root) = &root {
+            next.save(&crate::auth::registry_path(root))?;
+        }
+        *guard = next;
+        Ok(out)
     }
 
     /// Keep a built-in client's credential file (and the live `web-ui` cookie
@@ -201,7 +261,7 @@ impl AppState {
         if !client.builtin {
             return;
         }
-        if let Some(root) = self.config_root() {
+        if let Ok(Some(root)) = self.config_root() {
             let path = crate::auth::builtin_credential_path(&root, &client.name);
             match credential {
                 Some(c) => {
@@ -229,9 +289,7 @@ impl AppState {
     /// Register a new client and mint its credential (returned once).
     pub fn register_client(&self, name: &str) -> Result<(Client, String), String> {
         let key = self.signing_key()?;
-        let mut registry = self.clients.write().map_err(|e| e.to_string())?;
-        let client = registry.register(name, clients::now())?;
-        self.persist_registry(&registry)?;
+        let client = self.mutate_registry(|r| r.register(name, clients::now()))?;
         let credential = crate::auth::issue_credential(&client, &key, client.issued_at);
         Ok((client, credential))
     }
@@ -239,9 +297,7 @@ impl AppState {
     /// Reissue: mint a new credential and invalidate every older one.
     pub fn reissue_client(&self, id: uuid::Uuid) -> Result<(Client, String), String> {
         let key = self.signing_key()?;
-        let mut registry = self.clients.write().map_err(|e| e.to_string())?;
-        let client = registry.reissue(id, clients::now())?;
-        self.persist_registry(&registry)?;
+        let client = self.mutate_registry(|r| r.reissue(id, clients::now()))?;
         let credential = crate::auth::issue_credential(&client, &key, client.issued_at);
         self.sync_builtin_credential(&client, Some(&credential));
         Ok((client, credential))
@@ -250,9 +306,7 @@ impl AppState {
     /// Revoke: every credential of this client stops working immediately.
     pub fn revoke_client(&self, id: uuid::Uuid) -> Result<Client, String> {
         self.signing_key()?;
-        let mut registry = self.clients.write().map_err(|e| e.to_string())?;
-        let client = registry.revoke(id, clients::now())?;
-        self.persist_registry(&registry)?;
+        let client = self.mutate_registry(|r| r.revoke(id, clients::now()))?;
         self.sync_builtin_credential(&client, None);
         Ok(client)
     }
@@ -286,32 +340,16 @@ impl AppState {
 
     /// Adopt the on-disk registry (and the `web-ui` credential file) when they
     /// differ from memory. Returns whether anything changed. No-op without a
-    /// config root.
+    /// config root, and never adopts a missing, unparsable or built-in-less
+    /// file (see [`load_adoptable_registry`]).
     pub fn refresh_clients_from_disk(&self) -> bool {
-        let Some(root) = self.config_root() else {
+        let Ok(Some(root)) = self.config_root() else {
             return false;
         };
-        let Ok(on_disk) = ClientRegistry::load(&crate::auth::registry_path(&root)) else {
+        let Ok(mut guard) = self.clients.write() else {
             return false;
         };
-        let changed = match self.clients.read() {
-            Ok(g) => *g != on_disk,
-            Err(_) => return false,
-        };
-        if !changed {
-            return false;
-        }
-        if let Ok(mut g) = self.clients.write() {
-            *g = on_disk;
-        }
-        let web_ui = crate::auth::read_trimmed(&crate::auth::builtin_credential_path(
-            &root,
-            clients::WEB_UI,
-        ));
-        if let Ok(mut g) = self.web_ui_credential.write() {
-            *g = web_ui;
-        }
-        true
+        self.adopt_from_disk_locked(&mut guard, &root)
     }
 
     /// Load a windowed slice of a session, caching the lightened build for the
@@ -799,5 +837,83 @@ mod tests {
             Some("theirs".to_string())
         );
         assert!(!state.refresh_clients_from_disk(), "already in sync");
+    }
+
+    #[test]
+    fn refresh_never_adopts_a_missing_empty_or_builtin_less_registry() {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::for_tests(AuthMode::Enabled {
+            key: b"0123456789abcdef0123456789abcdef".to_vec(),
+            source: crate::auth::KeySource::Ephemeral,
+        });
+        state.set_config_root(Some(root.path().to_path_buf()));
+        let before = state.clients_snapshot();
+        let path = crate::auth::registry_path(root.path());
+
+        assert!(!state.refresh_clients_from_disk(), "no file");
+        std::fs::write(&path, "{}").unwrap();
+        assert!(!state.refresh_clients_from_disk(), "empty registry");
+        std::fs::write(&path, "{ not json").unwrap();
+        assert!(!state.refresh_clients_from_disk(), "corrupt registry");
+        let mut only_foo = ClientRegistry::default();
+        only_foo.register("foo", 1).unwrap();
+        only_foo.save(&path).unwrap();
+        assert!(!state.refresh_clients_from_disk(), "built-ins missing");
+        assert_eq!(state.clients_snapshot(), before, "memory untouched");
+
+        // A complete registry from another process is adopted.
+        let mut full = ClientRegistry {
+            clients: before.clone(),
+        };
+        full.register("foo", 2).unwrap();
+        full.save(&path).unwrap();
+        assert!(state.refresh_clients_from_disk());
+        assert!(state.clients_snapshot().iter().any(|c| c.name == "foo"));
+    }
+
+    #[test]
+    fn mutations_adopt_another_processes_changes_instead_of_overwriting_them() {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::for_tests(AuthMode::Enabled {
+            key: b"0123456789abcdef0123456789abcdef".to_vec(),
+            source: crate::auth::KeySource::Ephemeral,
+        });
+        state.set_config_root(Some(root.path().to_path_buf()));
+        let path = crate::auth::registry_path(root.path());
+
+        // Another process revokes tui and registers "x" on disk while this
+        // one's memory still says tui is active.
+        let mut other = ClientRegistry {
+            clients: state.clients_snapshot(),
+        };
+        let tui_id = other.find_by_name(clients::TUI).unwrap().id;
+        other.revoke(tui_id, 5).unwrap();
+        other.register("x", 6).unwrap();
+        other.save(&path).unwrap();
+
+        // This process registers "y": the disk state is adopted first, so the
+        // save keeps tui revoked and x present rather than resurrecting tui.
+        state.register_client("y").unwrap();
+        let on_disk = ClientRegistry::load(&path).unwrap();
+        assert!(on_disk.find_by_name(clients::TUI).unwrap().is_revoked());
+        assert!(on_disk.find_by_name("x").is_some());
+        assert!(on_disk.find_by_name("y").is_some());
+        assert_eq!(state.clients_snapshot(), on_disk.clients);
+    }
+
+    #[test]
+    fn failed_save_leaves_memory_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        // A config "root" that is a regular file: clients.json cannot be written.
+        let bogus_root = dir.path().join("not-a-dir");
+        std::fs::write(&bogus_root, "x").unwrap();
+        let state = AppState::for_tests(AuthMode::Enabled {
+            key: b"0123456789abcdef0123456789abcdef".to_vec(),
+            source: crate::auth::KeySource::Ephemeral,
+        });
+        state.set_config_root(Some(bogus_root));
+        let before = state.clients_snapshot();
+        assert!(state.register_client("z").is_err());
+        assert_eq!(state.clients_snapshot(), before);
     }
 }

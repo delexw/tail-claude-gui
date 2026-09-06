@@ -58,8 +58,8 @@ export function reconnectSse(): void {
   sseSource = openSource();
 }
 
-// Wherever the token changes — this tab's Regenerate, or a rotation by another
-// process pushed here over HMR (see lib/apiToken.ts) — the stream follows it.
+// Wherever the credential changes — this tab's Reissue, or a reissue by another
+// client pushed here over HMR (see lib/apiToken.ts) — the stream follows it.
 onApiTokenChange(() => reconnectSse());
 
 export async function listen<T>(

@@ -112,10 +112,10 @@ Revoke or reissue any client from the same Settings section without affecting th
 
 ## Volumes
 
-| Container path      | Purpose                                                              |
-| ------------------- | -------------------------------------------------------------------- |
-| `/home/app/.claude` | Source of session JSONL files (mount your host's `~/.claude` here)   |
-| `/home/app/.config` | `settings.json` — persisted read-write so settings survive recreates |
+| Container path      | Purpose                                                                                                                         |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `/home/app/.claude` | Source of session JSONL files (mount your host's `~/.claude` here)                                                              |
+| `/home/app/.config` | `settings.json`, `api-secret`, `clients.json`, `clients/*.jwt` — persisted read-write so settings and clients survive recreates |
 
 The app only needs to **read** session logs, so mounting `/home/app/.claude`
 read-only (`:ro`) is recommended and is what the shipped `docker-compose.yml`

@@ -146,7 +146,15 @@ mod tests {
         assert_eq!(json["api_auth_source"], "file");
         assert_eq!(json["clients"].as_array().unwrap().len(), 2);
         assert_eq!(json["clients"][0]["name"], "web-ui");
-        assert!(json["clients"][0].get("credential").is_none());
+        // Exactly the registry fields — a credential or key can never ride along.
+        let mut keys: Vec<&str> = json["clients"][0]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(keys, ["builtin", "created_at", "id", "issued_at", "name"]);
         assert!(json.get("api_token").is_none());
     }
 

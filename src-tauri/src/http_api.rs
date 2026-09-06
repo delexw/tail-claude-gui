@@ -1101,6 +1101,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn cookie_carrier_is_ignored_for_same_site_form_posts() {
+        let state = test_state(enabled());
+        let web = credential_for(&state, WEB_UI);
+        let web_id = state
+            .app_state
+            .clients_snapshot()
+            .into_iter()
+            .find(|c| c.name == WEB_UI)
+            .unwrap()
+            .id;
+        let router = build_router(state.clone(), None);
+        let cookie = format!("cctrace_token={web}");
+
+        // A page on another port of the same host auto-submits a form: the
+        // browser attaches the cookie (same-site) and labels the fetch.
+        let forged = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/api/clients/{web_id}/revoke"))
+            .header("cookie", &cookie)
+            .header("sec-fetch-site", "same-site")
+            .body(Body::empty())
+            .unwrap();
+        let resp = router.clone().oneshot(forged).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+        assert!(
+            !state
+                .app_state
+                .clients_snapshot()
+                .iter()
+                .find(|c| c.name == WEB_UI)
+                .unwrap()
+                .is_revoked(),
+            "web-ui was not revoked by the forged request"
+        );
+
+        // The UI's own fetches are same-origin and keep working.
+        let (status, json) = whoami(
+            router.clone(),
+            &[("cookie", &cookie), ("sec-fetch-site", "same-origin")],
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json["client"]["name"], "web-ui");
+
+        // The header carrier is unaffected: forms cannot set custom headers.
+        let (status, _) = whoami(
+            router,
+            &[("x-cctrace-token", &web), ("sec-fetch-site", "cross-site")],
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    #[tokio::test]
     async fn settings_report_auth_mode_and_clients_but_no_credentials() {
         let state = test_state(enabled());
         let tui = credential_for(&state, TUI);

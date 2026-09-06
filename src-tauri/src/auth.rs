@@ -30,7 +30,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use axum::extract::{Request, State};
-use axum::http::{header, HeaderValue, Method, StatusCode, Uri};
+use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode, Uri};
 use axum::middleware::Next;
 use axum::response::Response;
 use rand::RngCore;
@@ -61,7 +61,7 @@ pub enum KeySource {
 }
 
 /// Live verification mode, read on every request.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum AuthMode {
     /// `CCTRACE_API_AUTH=off`: every request is accepted, no identity attached.
     Disabled,
@@ -69,6 +69,20 @@ pub enum AuthMode {
         key: Vec<u8>,
         source: KeySource,
     },
+}
+
+/// Never print the signing key, even at debug level.
+impl std::fmt::Debug for AuthMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AuthMode::Disabled => f.write_str("Disabled"),
+            AuthMode::Enabled { key, source } => f
+                .debug_struct("Enabled")
+                .field("key", &format_args!("<redacted {} bytes>", key.len()))
+                .field("source", source)
+                .finish(),
+        }
+    }
 }
 
 impl AuthMode {
@@ -133,7 +147,9 @@ pub fn generate_secret_hex() -> String {
 }
 
 fn hex_to_bytes(hex: &str) -> Option<Vec<u8>> {
-    if hex.len() % 2 != 0 || hex.is_empty() {
+    // Byte-offset slicing below is only sound on ASCII; anything else is not
+    // hex anyway (and must not panic at startup).
+    if !hex.is_ascii() || hex.len() % 2 != 0 || hex.is_empty() {
         return None;
     }
     (0..hex.len())
@@ -238,7 +254,7 @@ pub(crate) fn write_private_atomic(path: &Path, bytes: &[u8]) -> Result<(), Stri
 // ---------------------------------------------------------------------------
 
 /// Everything `AppState` needs to enforce client verification.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ResolvedAuth {
     pub mode: AuthMode,
     pub registry: ClientRegistry,
@@ -357,7 +373,22 @@ pub fn resolve_auth_from(env_auth: Option<String>, root: Option<&Path>) -> Resol
     let persisted_root = root.filter(|_| source == KeySource::File);
     let mut registry = match persisted_root {
         Some(root) => ClientRegistry::load(&registry_path(root)).unwrap_or_else(|e| {
-            warnings.push(format!("{e}; starting with an empty client registry"));
+            // Never overwrite a registry we could not read: move it aside so
+            // the user's clients can be recovered, then start fresh (every
+            // previously issued credential stops working — say so loudly).
+            let path = registry_path(root);
+            let backup = path.with_file_name(format!("clients.json.corrupt-{}", clients::now()));
+            match fs::rename(&path, &backup) {
+                Ok(()) => warnings.push(format!(
+                    "{e}; moved it to {} and started a fresh client registry — every previously \
+                     issued credential is now invalid",
+                    backup.display()
+                )),
+                Err(re) => warnings.push(format!(
+                    "{e}; could not move it aside ({re}); starting a fresh client registry — \
+                     every previously issued credential is now invalid"
+                )),
+            }
             ClientRegistry::default()
         }),
         None => ClientRegistry::default(),
@@ -436,7 +467,11 @@ fn percent_decode(s: &str) -> String {
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let Ok(b) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
+            // Work on bytes: slicing the `&str` at byte offsets would panic
+            // when a multi-byte character follows the `%` (an attacker-chosen
+            // query string reaches this code unauthenticated).
+            let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).ok();
+            if let Some(b) = hex.and_then(|h| u8::from_str_radix(h, 16).ok()) {
                 out.push(b);
                 i += 3;
                 continue;
@@ -488,11 +523,28 @@ fn presented_credentials(req: &Request) -> Vec<String> {
     if let Some(q) = req.uri().query() {
         out.extend(query_param(q, TOKEN_QUERY));
     }
-    if let Some(c) = headers.get(header::COOKIE).and_then(|v| v.to_str().ok()) {
-        out.extend(cookie_value(c, TOKEN_COOKIE));
+    if cookie_carrier_allowed(headers) {
+        if let Some(c) = headers.get(header::COOKIE).and_then(|v| v.to_str().ok()) {
+            out.extend(cookie_value(c, TOKEN_COOKIE));
+        }
     }
     out.retain(|t| !t.is_empty());
     out
+}
+
+/// The cookie is only meant for the same-origin UI. `SameSite=Strict` already
+/// keeps cross-*site* pages from riding on it, but a page on another port of
+/// the same host is same-*site*: a `<form method=POST>` auto-submitted from
+/// `localhost:<other>` would carry the cookie to a body-less mutating route
+/// such as `/api/clients/{id}/revoke` (a simple request, so CORS never blocks
+/// it). Browsers label such requests `Sec-Fetch-Site: same-site` (or
+/// `cross-site`); only `same-origin` / `none` (typed URL) — or no header at
+/// all, for non-browser and older clients — may use the cookie carrier.
+fn cookie_carrier_allowed(headers: &HeaderMap) -> bool {
+    match headers.get("sec-fetch-site").and_then(|v| v.to_str().ok()) {
+        None => true,
+        Some(site) => matches!(site.trim(), "same-origin" | "none"),
+    }
 }
 
 /// axum middleware: reject `/api/*` requests that don't carry a valid
@@ -654,6 +706,76 @@ mod tests {
     }
 
     // -- key file --------------------------------------------------------------
+
+    #[test]
+    fn non_ascii_input_never_panics_the_decoders() {
+        assert_eq!(hex_to_bytes("aéb"), None);
+        assert_eq!(hex_to_bytes("éé"), None);
+        assert_eq!(percent_decode("%aé"), "%aé");
+        assert_eq!(percent_decode("é%41"), "éA");
+        assert_eq!(percent_decode("%"), "%");
+        assert_eq!(percent_decode("%2"), "%2");
+    }
+
+    #[test]
+    fn debug_output_never_contains_the_key() {
+        let mode = AuthMode::Enabled {
+            key: KEY.to_vec(),
+            source: KeySource::File,
+        };
+        let shown = format!("{mode:?}");
+        assert!(
+            !shown.contains(std::str::from_utf8(KEY).unwrap()),
+            "{shown}"
+        );
+        assert!(shown.contains("redacted"), "{shown}");
+    }
+
+    #[test]
+    fn corrupt_registry_is_moved_aside_not_overwritten() {
+        let root = tmp_root();
+        let path = registry_path(root.path());
+        fs::write(&path, "{ definitely not json").unwrap();
+
+        let resolved = resolve_auth_from(None, Some(root.path()));
+        assert!(resolved.mode.is_enabled());
+        assert_eq!(resolved.registry.clients.len(), 2, "fresh built-ins");
+        assert!(
+            resolved.warnings.iter().any(|w| w.contains("moved it to")),
+            "{:?}",
+            resolved.warnings
+        );
+        let backups: Vec<_> = fs::read_dir(root.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .starts_with("clients.json.corrupt-")
+            })
+            .collect();
+        assert_eq!(backups.len(), 1);
+        assert_eq!(
+            fs::read_to_string(backups[0].path()).unwrap(),
+            "{ definitely not json",
+            "original contents preserved for recovery"
+        );
+        assert!(ClientRegistry::load(&path).is_ok(), "new registry parses");
+    }
+
+    #[test]
+    fn cookie_carrier_is_refused_for_same_site_and_cross_site_fetches() {
+        let mut headers = HeaderMap::new();
+        assert!(cookie_carrier_allowed(&headers), "no header: non-browser");
+        headers.insert("sec-fetch-site", HeaderValue::from_static("same-origin"));
+        assert!(cookie_carrier_allowed(&headers));
+        headers.insert("sec-fetch-site", HeaderValue::from_static("none"));
+        assert!(cookie_carrier_allowed(&headers));
+        headers.insert("sec-fetch-site", HeaderValue::from_static("same-site"));
+        assert!(!cookie_carrier_allowed(&headers));
+        headers.insert("sec-fetch-site", HeaderValue::from_static("cross-site"));
+        assert!(!cookie_carrier_allowed(&headers));
+    }
 
     #[test]
     fn generate_secret_is_64_lowercase_hex_and_unique() {

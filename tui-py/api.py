@@ -28,15 +28,32 @@ class ApiAuthError(httpx.HTTPStatusError):
     ``tui`` client credential (HTTP 401). See ``auth.py`` for where it comes from."""
 
 
+def _auth_error_message(resp: httpx.Response) -> str:
+    path = auth.credential_path()
+    if auth.resolve_credential() is None:
+        why = (
+            f"The TUI sent no client credential: {path} is missing or empty (the backend "
+            f"writes it on start), or {auth.ENV_AUTH}=off is set for the TUI but not the backend."
+        )
+    else:
+        why = (
+            f"Backend rejected the TUI's client credential from {path}. Run the TUI as the "
+            "same user as the backend, or reissue the `tui` client in "
+            "Settings > Accepted clients."
+        )
+    # The body may be empty or non-JSON (a proxy's 401 page): never let the
+    # error explaining a 401 raise its own error.
+    try:
+        body = resp.json()
+    except Exception:  # noqa: BLE001 — any parse failure just means "no detail"
+        body = None
+    detail = body.get("error") if isinstance(body, dict) else None
+    return f"{why} Backend said: {detail}" if detail else why
+
+
 def _raise_for_status(resp: httpx.Response) -> None:
     if resp.status_code == 401:
-        raise ApiAuthError(
-            "Backend rejected the TUI's client credential. The TUI reads it from "
-            f"{auth.credential_path()}, which the backend writes; run the TUI as the same "
-            "user as the backend, or reissue the `tui` client in Settings > Accepted clients.",
-            request=resp.request,
-            response=resp,
-        )
+        raise ApiAuthError(_auth_error_message(resp), request=resp.request, response=resp)
     resp.raise_for_status()
 
 

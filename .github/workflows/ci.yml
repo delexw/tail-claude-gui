@@ -42,7 +42,7 @@ jobs:
         run: pip install -r tui-py/requirements.txt
 
       - name: TypeScript type check
-        run: npx tsc --noEmit
+        run: npx tsc --noEmit && npx tsc -p tsconfig.node.json --noEmit
 
       - name: JS/TS lint
         run: npx oxlint

@@ -14,6 +14,7 @@ import { execSync } from "node:child_process";
 import { cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { snapshotRealSecrets } from "./real-secrets.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const tmp = resolve(root, "e2e/.tmp");
@@ -21,9 +22,10 @@ const fixtures = resolve(root, "e2e/fixtures/projects");
 
 rmSync(tmp, { recursive: true, force: true });
 mkdirSync(tmp, { recursive: true });
-// Timestamp the run so specs can prove no server wrote a secret to the *real*
-// config dir (see "keeps every secret on the test path" in same-origin.spec.ts).
-writeFileSync(resolve(tmp, "started-at"), String(Date.now()));
+// Record the state of every secret in the *real* config dir before any server
+// starts, so specs can prove the run neither wrote nor deleted one there (see
+// "keeps every secret on the test path" in same-origin.spec.ts).
+writeFileSync(resolve(tmp, "real-secrets.json"), JSON.stringify(snapshotRealSecrets(), null, 2));
 for (const shape of ["same", "web"]) {
   mkdirSync(resolve(tmp, shape, "config"), { recursive: true });
   cpSync(fixtures, resolve(tmp, shape, "projects"), { recursive: true });

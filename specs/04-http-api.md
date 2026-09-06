@@ -472,20 +472,31 @@ any `alg` other than `HS256` (including `none`) is rejected before the payload i
 
 1. `CCTRACE_API_AUTH=off` → verification **disabled**; a warning is printed to stderr. No identity
    is attached to requests and client management is refused.
-2. Otherwise load or create `api-secret`, load `clients.json` (a corrupt file is an error, not a
-   silent reset), add any missing built-in client, and (re)write `clients/web-ui.jwt` /
-   `clients/tui.jwt` when missing or no longer valid under the current key and `issued_at`.
+2. Otherwise load or create `api-secret`, load `clients.json`, add any missing built-in client, and
+   (re)write `clients/web-ui.jwt` / `clients/tui.jwt` when missing or no longer valid under the
+   current key and `issued_at`. A `clients.json` that does not parse is never overwritten in place:
+   it is moved to `clients.json.corrupt-<unix time>` (so the clients it held can be recovered by
+   hand), a fresh registry with new built-ins is started, and a loud warning says that every
+   previously issued credential is now invalid.
 3. If the config dir cannot be used the server fails **closed**: it runs with an in-memory key
    (`api_auth_source: "ephemeral"`), the built-ins are registered in memory, and Settings explains
    that credentials issued now die with the process and the TUI cannot read its own.
 
 `AppState` holds `auth: RwLock<AuthMode>`, `clients: RwLock<ClientRegistry>` and the live `web-ui`
 credential. All writes (`clients.json`, `clients/*.jwt`) go through a sibling temp file and a rename,
-so concurrent readers never see them empty. When a verified credential names a client the in-memory
-registry does not accept (unknown id or stale `iat`), the middleware re-reads `clients.json` once
-before rejecting: if another cctrace process sharing the config dir (a background `--web` service
-next to the desktop app, say) registered or reissued that client, the live registry heals on the spot
-instead of the client getting 401 until a restart.
+so concurrent readers never see them empty. Several cctrace processes may share one config dir (a
+background `--web` service next to the desktop app, say), so the registry is treated as shared state:
+
+- When a verified credential names a client the in-memory registry does not accept (unknown id or
+  stale `iat`), the middleware re-reads `clients.json` once before rejecting, so a client registered
+  or reissued by another process is accepted on the spot instead of getting 401 until a restart.
+- Register, reissue and revoke run under the registry write lock, **adopt the on-disk registry
+  first**, apply the change, and save it before it becomes visible in memory — so one process's
+  stale copy never overwrites another's revocation, and a failed save leaves memory untouched.
+- The refresh compares and swaps under the same write lock (no window in which a refresh loaded
+  before a revoke could replace the revoked state), and never adopts a file that is missing, does
+  not parse, or lacks the built-in clients — deleting `clients.json` while the server runs must not
+  lock every client out; startup handles that case.
 
 ### Accepted carriers (`auth::require_client`)
 
@@ -497,6 +508,13 @@ Checked in this order; the first credential that verifies **and** maps to a live
 | `Authorization: Bearer <credential>` | curl / external tools                                       |
 | `?token=<credential>` query          | Browser `EventSource` on `/api/events` (cannot set headers) |
 | `cctrace_token` cookie               | Docker same-origin UI (set by the server, see below)        |
+
+The cookie carrier is honoured only when the request has no `Sec-Fetch-Site` header (non-browser or
+older clients) or it is `same-origin` / `none`. `SameSite=Strict` already stops cross-_site_ pages,
+but a page on another port of the same host is same-_site_: a `<form method=POST>` auto-submitted
+from `localhost:<other>` would otherwise carry the cookie to a body-less mutating route such as
+`/api/clients/{id}/revoke` (a simple request, so CORS never blocks it). Browsers label such requests
+`same-site`, and the header carrier is unaffected because forms cannot set custom headers.
 
 On success the caller's `ClientIdentity { id, name }` is attached to the request (`GET /api/whoami`
 returns it). Otherwise `401 {"error": "invalid or revoked client credential — ..."}`. `OPTIONS`
@@ -511,12 +529,17 @@ rather than 401.
   plugin in `vite.config.ts` reads `clients/web-ui.jwt` (read-only — `bin/api-token.mjs`; the plugin
   never creates anything, only the backend holds the key) and serves it as the virtual module
   `virtual:cctrace-api-token` — `""` in production builds, so a bundle never contains a credential,
-  and `""` until the backend has written the file on a first run. `src/lib/apiToken.ts` imports it;
+  and `""` until the backend has written the file on a first run (the plugin watches the file, the
+  `clients/` directory and the config root, so it sees the file appear at any of those levels).
+  `src/lib/apiToken.ts` imports it;
   `invoke.ts` sends the header and `listen.ts` appends `?token=`. When the file appears or changes on
   disk (Reissue `web-ui` from this tab, another tab, the desktop app or any other client) the plugin
   invalidates the module and pushes it over HMR; `apiToken.ts` accepts the update and every open tab
   adopts the new credential in place — no dev-server restart and no page reload (a restart would make
   Vite's client full-reload the page and tear down the Settings modal the user just clicked in).
+  If a tab hit a 401 before the credential existed (backend started after the dev server) or
+  after `web-ui` was revoked, `App` re-runs its bootstrap when the credential arrives over HMR, so
+  the "Not an accepted client" banner clears itself once `web-ui` is (re)issued.
 - **Docker / same-origin** (`CCTRACE_STATIC_DIR` set): `auth::attach_credential_cookie` wraps the
   static fallback and adds `Set-Cookie: cctrace_token=<web-ui credential>; Path=/; HttpOnly;
 SameSite=Strict` to `text/html` responses — but **only when the request `Host` is allowlisted**:

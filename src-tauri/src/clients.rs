@@ -272,7 +272,7 @@ mod tests {
     }
 
     #[test]
-    fn corrupt_registry_is_an_error_not_a_silent_reset() {
+    fn corrupt_registry_load_is_an_error() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("clients.json");
         std::fs::write(&path, "{ not json").unwrap();

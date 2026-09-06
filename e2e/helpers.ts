@@ -2,8 +2,8 @@ import { expect, type APIRequestContext, type Page } from "@playwright/test";
 import { appendFileSync, existsSync, readFileSync, statSync } from "node:fs";
 import http from "node:http";
 import { join } from "node:path";
-import { appConfigRoot } from "../bin/api-token.mjs";
 import { E2E } from "../playwright.config";
+import { SECRET_FILES, snapshotRealSecrets } from "./real-secrets.mjs";
 
 /** Texts from e2e/fixtures/projects/-tmp-e2e-demo/e2e-session.jsonl. */
 export const FIXTURE_FIRST_MESSAGE = "hello from the e2e fixture";
@@ -29,19 +29,10 @@ export function readCredential(configDir: string, client: "web-ui" | "tui"): str
   return readFileSync(join(configDir, "clients", `${client}.jwt`), "utf8").trim();
 }
 
-/** Every secret the backend persists under a config root. */
-const SECRET_FILES = ["api-secret", "clients.json", "clients/web-ui.jwt", "clients/tui.jwt"];
-
-/** Where the secrets would live if `CCTRACE_CONFIG_DIR` were *not* set — the
- * developer's real config. The suite must never create or modify them. */
-export function realConfigRoot(): string {
-  const env = { ...process.env };
-  delete env.CCTRACE_CONFIG_DIR;
-  return appConfigRoot({ env });
-}
-
 /** Assert every secret for `configDir` lives on the test path with owner-only
- * permissions, and that no real secret was written during this run. */
+ * permissions, and that the developer's real secrets (the config dir used
+ * when `CCTRACE_CONFIG_DIR` is unset) are exactly as `e2e/prepare.mjs` found
+ * them before any server started: none created, modified, or deleted. */
 export function expectSecretOnTestPath(configDir: string): void {
   for (const file of SECRET_FILES) {
     const testPath = join(configDir, file);
@@ -51,13 +42,12 @@ export function expectSecretOnTestPath(configDir: string): void {
       expect(statSync(testPath).mode & 0o777, `${testPath} mode`).toBe(0o600);
     }
   }
-  const startedAt = Number(readFileSync(join(E2E.tmp, "started-at"), "utf8"));
-  for (const file of SECRET_FILES) {
-    const real = join(realConfigRoot(), file);
-    if (existsSync(real)) {
-      expect(statSync(real).mtimeMs, `${real} was modified by the e2e run`).toBeLessThan(startedAt);
-    }
-  }
+  const before = JSON.parse(readFileSync(join(E2E.tmp, "real-secrets.json"), "utf8")) as ReturnType<
+    typeof snapshotRealSecrets
+  >;
+  expect(snapshotRealSecrets(), "real config dir secrets changed during the e2e run").toEqual(
+    before,
+  );
 }
 
 /** Same credential, last signature character flipped: well-formed, wrong MAC. */

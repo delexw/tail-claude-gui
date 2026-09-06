@@ -568,6 +568,32 @@ describe("SettingsModal", () => {
     expect(screen.getByText(/"tui" revoked/)).toBeInTheDocument();
   });
 
+  it("runs one client action at a time — a second Enter does not register twice", async () => {
+    let resolveRegister!: (v: unknown) => void;
+    const inFlight = new Promise((resolve) => {
+      resolveRegister = resolve;
+    });
+    useSettings(withClients("file"), { register_client: inFlight });
+    renderModal();
+    await screen.findByRole("table", { name: "Accepted clients" });
+
+    const input = screen.getByLabelText("New client name");
+    fireEvent.change(input, { target: { value: "twice" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.click(screen.getByLabelText("Reissue tui"));
+    fireEvent.click(screen.getByLabelText("Reissue tui")); // confirm while busy → ignored
+    expect(mockInvoke.mock.calls.filter(([c]) => c === "register_client")).toHaveLength(1);
+    expect(mockInvoke).not.toHaveBeenCalledWith("reissue_client", expect.anything());
+
+    resolveRegister({
+      client: { id: "5", name: "twice", builtin: false, created_at: 1, issued_at: 1 },
+      credential: "eyJ.twice.sig",
+    });
+    await screen.findByLabelText("New client credential");
+    expect(mockInvoke.mock.calls.filter(([c]) => c === "register_client")).toHaveLength(1);
+  });
+
   it("shows the backend error when a client action fails", async () => {
     useSettings(withClients("file"), {
       register_client: new Error('a client named "tui" already exists'),

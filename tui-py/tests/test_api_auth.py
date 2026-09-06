@@ -86,15 +86,32 @@ async def test_no_header_when_credential_unavailable(monkeypatch):
     assert FakeClient.calls[0][2] == {}
 
 
-async def test_401_raises_api_auth_error_naming_the_credential_source():
+async def test_401_with_a_credential_names_the_file_and_the_backend_error():
     FakeClient.status = 401
+    FakeClient.payload = {"error": "invalid or revoked client credential"}
     with pytest.raises(api.ApiAuthError) as info:
         await api.get_project_dirs()
-    assert "clients/tui.jwt" in str(info.value).replace("\\", "/")
-    assert "Accepted clients" in str(info.value)
-    assert "CCTRACE_API_TOKEN" not in str(info.value)
+    msg = str(info.value).replace("\\", "/")
+    assert "rejected the TUI's client credential" in msg
+    assert "clients/tui.jwt" in msg
+    assert "Accepted clients" in msg
+    assert "Backend said: invalid or revoked client credential" in msg
+    assert "CCTRACE_API_TOKEN" not in msg
     # Still an httpx.HTTPStatusError, so existing broad handlers keep working.
     assert isinstance(info.value, httpx.HTTPStatusError)
+
+
+async def test_401_without_a_credential_blames_the_missing_file_not_the_backend(monkeypatch):
+    monkeypatch.setattr(auth, "resolve_credential", lambda: None)
+    FakeClient.status = 401
+    FakeClient.payload = None
+    with pytest.raises(api.ApiAuthError) as info:
+        await api.get_project_dirs()
+    msg = str(info.value).replace("\\", "/")
+    assert "sent no client credential" in msg
+    assert "clients/tui.jwt" in msg
+    assert "CCTRACE_API_AUTH" in msg
+    assert "Backend said" not in msg
 
 
 async def test_other_errors_are_plain_http_status_errors():

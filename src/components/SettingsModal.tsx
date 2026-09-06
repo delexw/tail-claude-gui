@@ -200,7 +200,9 @@ export function SettingsModal({
 
   const handleRegister = useCallback(async () => {
     const name = newClientName.trim();
-    if (!name) return;
+    // One client action at a time: a second Enter while the first request is
+    // in flight would register the same name twice (and error).
+    if (!name || busyClient) return;
     setBusyClient("new");
     setError("");
     setPending(null);
@@ -217,7 +219,7 @@ export function SettingsModal({
     } finally {
       setBusyClient(null);
     }
-  }, [newClientName]);
+  }, [newClientName, busyClient]);
 
   // Reissue and revoke are two-click confirms: the first click arms the
   // button, the second acts. Either one cuts off a running client, so neither
@@ -231,6 +233,7 @@ export function SettingsModal({
         );
         return;
       }
+      if (busyClient) return; // one client action in flight at a time
       setPending(null);
       setBusyClient(client.id);
       setError("");
@@ -259,7 +262,7 @@ export function SettingsModal({
         setBusyClient(null);
       }
     },
-    [pending, replaceClient],
+    [pending, busyClient, replaceClient],
   );
 
   const handleRevoke = useCallback(
@@ -273,6 +276,7 @@ export function SettingsModal({
         );
         return;
       }
+      if (busyClient) return; // one client action in flight at a time
       setPending(null);
       setBusyClient(client.id);
       setError("");
@@ -287,7 +291,7 @@ export function SettingsModal({
         setBusyClient(null);
       }
     },
-    [pending, replaceClient, issued],
+    [pending, busyClient, replaceClient, issued],
   );
 
   const handleKeyDown = useCallback(
@@ -450,6 +454,7 @@ export function SettingsModal({
                           onClick={() => void handleReissue(client)}
                           disabled={busy}
                           aria-label={`Reissue ${client.name}`}
+                          aria-pressed={armed === "reissue"}
                         >
                           {armed === "reissue" ? "Confirm reissue?" : "Reissue"}
                         </button>
@@ -459,6 +464,7 @@ export function SettingsModal({
                           onClick={() => void handleRevoke(client)}
                           disabled={busy || revoked}
                           aria-label={`Revoke ${client.name}`}
+                          aria-pressed={armed === "revoke"}
                         >
                           {armed === "revoke" ? "Confirm revoke?" : "Revoke"}
                         </button>

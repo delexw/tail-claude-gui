@@ -1,7 +1,7 @@
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import { dirname } from "node:path";
-import { readWebUiCredential, webUiCredentialPath } from "./bin/api-token.mjs";
+import { appConfigRoot, readWebUiCredential, webUiCredentialPath } from "./bin/api-token.mjs";
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -50,9 +50,11 @@ function apiTokenPlugin(): Plugin {
     },
     configureServer(server) {
       const path = webUiCredentialPath();
-      // Watch the directory too: on a first run the file does not exist yet
-      // (the backend creates it moments after Vite starts).
-      server.watcher.add([path, dirname(path)]);
+      // Watch the parent directories too: on a first run neither the file nor
+      // `clients/` (nor, on a fresh install, the config root itself) exists
+      // yet — the backend creates them moments after Vite starts, and chokidar
+      // only reports a new file inside a directory it already watches.
+      server.watcher.add([path, dirname(path), appConfigRoot()]);
       const onCredentialFile = (changed: string) => {
         if (changed !== path) return;
         const mod = server.moduleGraph.getModuleById(API_TOKEN_MODULE_ID);
