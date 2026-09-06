@@ -349,16 +349,19 @@ Renders a single `DisplayItem` with expandable body:
 between Tauri IPC and HTTP fetch/EventSource at runtime.
 
 In HTTP mode every call must prove the browser is an accepted client (see
-[04-http-api.md — Authentication](04-http-api.md#authentication)). `src/lib/apiToken.ts` holds
-the shared token: in `cctrace --web` the `cctrace-api-token` plugin in `vite.config.ts` serves it as
-the virtual module `virtual:cctrace-api-token` (`""` in production builds and under vitest, which
-stubs it in `vitest.config.ts`); `invoke.ts` sends it as `X-CCTrace-Token` and `listen.ts` appends
-`?token=` to the `EventSource` URL. In Docker the value is empty and the server's same-origin cookie
-does the job. A 401 rejects with `ApiAuthError`, which `App` shows as a top-level banner instead of
-opening Settings. `setApiToken()` notifies `onApiTokenChange` subscribers only when the value really
-changes; `listen.ts` subscribes and reopens its stream, so the SSE connection follows the token whether
-the rotation came from Settings → Regenerate in this tab or was pushed over HMR because another process
-rewrote the file. The dev server is never restarted for a rotation.
+[04-http-api.md — Authentication](04-http-api.md#authentication)); the browser runs as the built-in
+`web-ui` client. `src/lib/apiToken.ts` holds this tab's credential: in `cctrace --web` the
+`cctrace-api-token` plugin in `vite.config.ts` reads `clients/web-ui.jwt` (written by the backend,
+never by the plugin) and serves it as the virtual module `virtual:cctrace-api-token` (`""` in
+production builds and under vitest, which stubs it in `vitest.config.ts`); `invoke.ts` sends it as
+`X-CCTrace-Token` and `listen.ts` appends `?token=` to the `EventSource` URL. In Docker the value is
+empty and the server's same-origin cookie does the job. A 401 rejects with `ApiAuthError`, which `App`
+shows as a top-level banner instead of opening Settings. `setApiToken()` notifies `onApiTokenChange`
+subscribers only when the value really changes; `listen.ts` subscribes and reopens its stream, so the
+SSE connection follows the credential whether the reissue came from Settings → Accepted clients in
+this tab or was pushed over HMR because another client rewrote the file. The dev server is never
+restarted for a reissue. `SettingsModal` owns the **Accepted clients** section: list, Add client
+(credential shown once), Reissue and Revoke (two-click confirms, `web-ui` lock-out warning).
 
 ```mermaid
 flowchart LR

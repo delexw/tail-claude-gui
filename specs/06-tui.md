@@ -4,12 +4,13 @@
 
 The TUI is a Python application built on the [Textual](https://textual.textualize.io/)
 framework. It connects to the same Rust HTTP backend as the desktop and web frontends
-over `localhost:11423` (`API_BASE` in `tui-py/app.py`). Every request carries the shared API
-client token as an `X-CCTrace-Token` header: `tui-py/auth.py` resolves it the same way the
-backend does (`CCTRACE_API_TOKEN`, else the `api-token` file in the config dir) and
-`auth_headers()` is re-evaluated per request and per SSE (re)connect, so a token rotated from
-the Settings UI is picked up without restarting the TUI. A 401 surfaces as `api.ApiAuthError`
-naming the token file. See [04-http-api.md](04-http-api.md#authentication).
+over `localhost:11423` (`API_BASE` in `tui-py/app.py`). The TUI is the built-in `tui` client:
+every request carries its signed credential as an `X-CCTrace-Token` header. `tui-py/auth.py`
+reads it from `clients/tui.jwt` in the config dir (written by the backend, never by the TUI) and
+`auth_headers()` is re-evaluated per request and per SSE (re)connect, so a `tui` credential
+reissued from the Settings UI is picked up without restarting the TUI. A 401 surfaces as
+`api.ApiAuthError` naming the file and Settings → Accepted clients. See
+[04-http-api.md](04-http-api.md#authentication).
 
 The TUI replaces the earlier React/Ink implementation that lived in `tui/`. The Python
 port keeps the same domain types and the same HTTP/SSE contract — only the rendering

@@ -1,4 +1,4 @@
-"""Tests for auth — how the TUI finds the shared HTTP API client token."""
+"""Tests for auth — how the TUI finds its own client credential."""
 
 from __future__ import annotations
 
@@ -26,65 +26,72 @@ def test_config_dir_windows_uses_appdata_with_fallback():
     assert auth.config_dir("win32", {}, Path("/u")) == Path("/u/AppData/Roaming")
 
 
-def test_token_path_is_inside_app_config_dir():
-    assert auth.token_path("linux", {}, Path("/h")) == Path(
-        "/h/.config/claude-code-trace/api-token"
+def test_credential_path_is_clients_tui_jwt_inside_app_config_dir():
+    assert auth.credential_path("linux", {}, Path("/h")) == Path(
+        "/h/.config/claude-code-trace/clients/tui.jwt"
     )
 
 
 def test_app_config_root_honours_override_env():
     env = {"CCTRACE_CONFIG_DIR": " /e2e/cfg ", "XDG_CONFIG_HOME": "/ignored"}
     assert auth.app_config_root("linux", env, Path("/h")) == Path("/e2e/cfg")
-    assert auth.token_path("linux", env, Path("/h")) == Path("/e2e/cfg/api-token")
+    assert auth.credential_path("linux", env, Path("/h")) == Path("/e2e/cfg/clients/tui.jwt")
     assert auth.app_config_root("linux", {"CCTRACE_CONFIG_DIR": "  "}, Path("/h")) == Path(
         "/h/.config/claude-code-trace"
     )
 
 
 def test_resolve_env_off_wins(tmp_path: Path):
-    p = tmp_path / "api-token"
-    p.write_text("filetoken\n")
-    assert (
-        auth.resolve_api_token({"CCTRACE_API_AUTH": " OFF ", "CCTRACE_API_TOKEN": "x"}, p) is None
-    )
+    p = tmp_path / "tui.jwt"
+    p.write_text("eyJ.file.sig\n")
+    assert auth.resolve_credential({"CCTRACE_API_AUTH": " OFF "}, p) is None
 
 
-def test_resolve_env_token_wins_over_file(tmp_path: Path):
-    p = tmp_path / "api-token"
-    p.write_text("filetoken\n")
-    assert auth.resolve_api_token({"CCTRACE_API_TOKEN": "  envtoken "}, p) == "envtoken"
+def test_resolve_ignores_removed_shared_token_env(tmp_path: Path):
+    # `CCTRACE_API_TOKEN` was the pre-0.15 shared secret; it must not be
+    # mistaken for a credential now that every client has its own.
+    p = tmp_path / "tui.jwt"
+    p.write_text("eyJ.file.sig\n")
+    assert auth.resolve_credential({"CCTRACE_API_TOKEN": "legacy"}, p) == "eyJ.file.sig"
 
 
 def test_resolve_reads_and_strips_file(tmp_path: Path):
-    p = tmp_path / "api-token"
-    p.write_text("  abc123 \n")
-    assert auth.resolve_api_token({}, p) == "abc123"
+    p = tmp_path / "tui.jwt"
+    p.write_text("  eyJ.abc.def \n")
+    assert auth.resolve_credential({}, p) == "eyJ.abc.def"
 
 
 def test_resolve_missing_or_empty_file_is_none(tmp_path: Path):
-    assert auth.resolve_api_token({}, tmp_path / "missing") is None
+    assert auth.resolve_credential({}, tmp_path / "missing") is None
     empty = tmp_path / "empty"
     empty.write_text("\n")
-    assert auth.resolve_api_token({}, empty) is None
+    assert auth.resolve_credential({}, empty) is None
 
 
 def test_resolve_defaults_to_config_dir_path(tmp_path: Path, monkeypatch):
-    token_file = tmp_path / "claude-code-trace" / "api-token"
-    token_file.parent.mkdir()
-    token_file.write_text("fromdefault\n")
+    cred_file = tmp_path / "claude-code-trace" / "clients" / "tui.jwt"
+    cred_file.parent.mkdir(parents=True)
+    cred_file.write_text("fromdefault\n")
     monkeypatch.setattr(auth.sys, "platform", "linux")
-    assert auth.resolve_api_token({"XDG_CONFIG_HOME": str(tmp_path)}) == "fromdefault"
+    assert auth.resolve_credential({"XDG_CONFIG_HOME": str(tmp_path)}) == "fromdefault"
 
 
-def test_auth_headers_uses_explicit_token():
+def test_resolve_never_creates_the_file(tmp_path: Path):
+    p = tmp_path / "clients" / "tui.jwt"
+    assert auth.resolve_credential({}, p) is None
+    assert not p.exists()
+    assert not p.parent.exists()
+
+
+def test_auth_headers_uses_explicit_credential():
     assert auth.auth_headers("t") == {"X-CCTrace-Token": "t"}
 
 
-def test_auth_headers_empty_without_token(monkeypatch):
-    monkeypatch.setattr(auth, "resolve_api_token", lambda: None)
+def test_auth_headers_empty_without_credential(monkeypatch):
+    monkeypatch.setattr(auth, "resolve_credential", lambda: None)
     assert auth.auth_headers() == {}
 
 
-def test_auth_headers_resolves_when_no_token_given(monkeypatch):
-    monkeypatch.setattr(auth, "resolve_api_token", lambda: "resolved")
+def test_auth_headers_resolves_when_no_credential_given(monkeypatch):
+    monkeypatch.setattr(auth, "resolve_credential", lambda: "resolved")
     assert auth.auth_headers() == {"X-CCTrace-Token": "resolved"}

@@ -24,16 +24,16 @@ _TIMEOUT = httpx.Timeout(30.0)
 
 
 class ApiAuthError(httpx.HTTPStatusError):
-    """The backend rejected the call because this TUI did not present the shared
-    API token (HTTP 401). See ``auth.py`` for where the token comes from."""
+    """The backend rejected the call because this TUI did not present a valid
+    ``tui`` client credential (HTTP 401). See ``auth.py`` for where it comes from."""
 
 
 def _raise_for_status(resp: httpx.Response) -> None:
     if resp.status_code == 401:
         raise ApiAuthError(
-            "Backend rejected the API token. The TUI reads it from "
-            f"{auth.token_path()} (or {auth.ENV_TOKEN}); run the TUI as the same user "
-            "as the backend, or copy the token from Settings > API access.",
+            "Backend rejected the TUI's client credential. The TUI reads it from "
+            f"{auth.credential_path()}, which the backend writes; run the TUI as the same "
+            "user as the backend, or reissue the `tui` client in Settings > Accepted clients.",
             request=resp.request,
             response=resp,
         )

@@ -494,9 +494,11 @@ export function App() {
     <div className="app">
       {authError && (
         <div className="app-auth-banner" role="alert">
-          <strong>Not an accepted client.</strong> This browser did not present the API token, so
-          the backend refused the connection. In dev/web mode restart <code>cctrace --web</code>; in
-          Docker open the UI via localhost or an allowed origin.
+          <strong>Not an accepted client.</strong> This browser did not present a valid{" "}
+          <code>web-ui</code> client credential, so the backend refused the connection. In dev/web
+          mode restart <code>cctrace --web</code>; in Docker open the UI via localhost or an allowed
+          origin. If <code>web-ui</code> was revoked, reissue it from the desktop app or another
+          client.
           <span className="app-auth-banner__detail">{authError}</span>
         </div>
       )}

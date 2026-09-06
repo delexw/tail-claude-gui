@@ -1,61 +1,73 @@
 /**
  * Docker shape: one backend serves `/api/*` and the built UI from the same
- * origin. The browser never learns the token — the server hands it over as an
- * `HttpOnly` cookie on the HTML shell, gated on an allowlisted `Host`.
+ * origin. The browser never learns its credential — the server hands the
+ * built-in `web-ui` client's credential over as an `HttpOnly` cookie on the
+ * HTML shell, gated on an allowlisted `Host`.
  */
 import { expect, test } from "@playwright/test";
 import { E2E } from "../playwright.config";
 import {
+  addClient,
   appendUserMessage,
+  ensureWebUiActive,
   expectSecretOnTestPath,
   FIXTURE_FIRST_MESSAGE,
   FIXTURE_REPLY,
-  rawGet,
-  readToken,
-  regenerateToken,
+  forge,
+  listClients,
   openSettings,
+  rawGet,
+  readCredential,
+  reissueClient,
+  reissueViaApi,
+  revokeClient,
+  whoami,
 } from "./helpers";
 
 const { port, configDir, projectsDir } = E2E.sameOrigin;
+const api = `http://127.0.0.1:${port}`;
 
 test.describe("HTTP API without a browser", () => {
-  test("keeps the secret on the test path, never the real config dir", () => {
+  test("keeps every secret on the test path, never the real config dir", () => {
     expectSecretOnTestPath(configDir);
     expectSecretOnTestPath(E2E.webMode.configDir);
   });
 
-  test("refuses anonymous callers and accepts the shared token", async ({ request }) => {
-    const token = readToken(configDir);
+  test("refuses anonymous callers and identifies each client by its credential", async ({
+    request,
+  }) => {
+    const tui = readCredential(configDir, "tui");
+    const webUi = readCredential(configDir, "web-ui");
+    expect(tui).not.toBe(webUi);
 
     const anonymous = await request.get("/api/settings");
     expect(anonymous.status()).toBe(401);
-    expect((await anonymous.json()).error).toContain("API token");
+    expect((await anonymous.json()).error).toContain("client credential");
 
-    const viaHeader = await request.get("/api/settings", {
-      headers: { "X-CCTrace-Token": token },
-    });
-    expect(viaHeader.status()).toBe(200);
-    const settings = await viaHeader.json();
-    expect(settings.api_auth_enabled).toBe(true);
-    expect(settings.api_token_source).toBe("file");
-    expect(settings.api_token).toBe(token);
+    expect(await whoami(request, api, tui)).toEqual({ status: 200, name: "tui" });
 
-    const viaBearer = await request.get("/api/project-dirs", {
-      headers: { Authorization: `Bearer ${token}` },
+    const viaBearer = await request.get("/api/whoami", {
+      headers: { Authorization: `Bearer ${webUi}` },
     });
     expect(viaBearer.status()).toBe(200);
+    expect((await viaBearer.json()).client.name).toBe("web-ui");
 
-    // Flip the last hex digit so the forged token always differs (replacing it
-    // with a fixed "0" collided with the real token one run in sixteen).
-    const forged = `${token.slice(0, -1)}${token.endsWith("0") ? "1" : "0"}`;
-    expect(forged).not.toBe(token);
-    const wrong = await request.get("/api/settings", {
-      headers: { "X-CCTrace-Token": forged },
-    });
-    expect(wrong.status()).toBe(401);
+    const settings = await request.get("/api/settings", { headers: { "X-CCTrace-Token": tui } });
+    expect(settings.status()).toBe(200);
+    const body = await settings.json();
+    expect(body.api_auth_enabled).toBe(true);
+    expect(body.api_auth_source).toBe("file");
+    expect(body.clients.map((c: { name: string }) => c.name)).toEqual(
+      expect.arrayContaining(["web-ui", "tui"]),
+    );
+    // Credentials are never listed.
+    expect(JSON.stringify(body)).not.toContain(tui);
+    expect(JSON.stringify(body)).not.toContain(webUi);
+
+    expect((await whoami(request, api, forge(tui))).status).toBe(401);
   });
 
-  test("static shell only hands out the token cookie to an allowlisted Host", async () => {
+  test("static shell only hands out the web-ui cookie to an allowlisted Host", async () => {
     const spoofed = await rawGet(port, "/", { Host: "attacker.example:1421" });
     expect(spoofed.status).toBe(200);
     expect(spoofed.headers["set-cookie"]).toBeUndefined();
@@ -63,14 +75,14 @@ test.describe("HTTP API without a browser", () => {
     const loopback = await rawGet(port, "/", { Host: `localhost:${port}` });
     expect(loopback.status).toBe(200);
     const cookie = (loopback.headers["set-cookie"] ?? []).join(";");
-    expect(cookie).toContain(`cctrace_token=${readToken(configDir)}`);
+    expect(cookie).toContain(`cctrace_token=${readCredential(configDir, "web-ui")}`);
     expect(cookie).toContain("HttpOnly");
     expect(cookie).toContain("SameSite=Strict");
   });
 });
 
 test.describe("browser UI", () => {
-  test("authenticates via the server-set cookie and shows the session", async ({
+  test("authenticates as web-ui via the server-set cookie and shows the session", async ({
     page,
     context,
     baseURL,
@@ -79,7 +91,7 @@ test.describe("browser UI", () => {
     await expect(page.getByText(FIXTURE_FIRST_MESSAGE)).toBeVisible();
 
     const cookie = (await context.cookies(baseURL!)).find((c) => c.name === "cctrace_token");
-    expect(cookie?.value).toBe(readToken(configDir));
+    expect(cookie?.value).toBe(readCredential(configDir, "web-ui"));
     expect(cookie?.httpOnly).toBe(true);
     expect(cookie?.sameSite).toBe("Strict");
 
@@ -104,8 +116,8 @@ test.describe("browser UI", () => {
     // Simulate a client the server refuses to hand the cookie to (e.g. a page
     // reached via an unallowlisted host): serve the real HTML shell but from a
     // Node-side fetch, so the browser never sees the `Set-Cookie` header and
-    // has no token for the API calls that follow. (`route.fetch()` would go
-    // through the browser's cookie jar and store the cookie anyway.)
+    // has no credential for the API calls that follow. (`route.fetch()` would
+    // go through the browser's cookie jar and store the cookie anyway.)
     await context.clearCookies();
     await page.route("**/", async (route) => {
       const body = await (await fetch(route.request().url())).text();
@@ -116,32 +128,105 @@ test.describe("browser UI", () => {
     await expect(page.getByText(FIXTURE_FIRST_MESSAGE)).toHaveCount(0);
   });
 
-  test("Settings shows the token and Regenerate rotates it without breaking the tab", async ({
+  test("Settings registers, reissues and revokes clients, each with its own credential", async ({
     page,
     request,
   }) => {
-    const oldToken = readToken(configDir);
+    await page.goto("/");
+    await expect(page.getByText(FIXTURE_FIRST_MESSAGE)).toBeVisible();
+    await openSettings(page);
+    const table = page.getByRole("table", { name: "Accepted clients" });
+    await expect(table.getByText("web-ui", { exact: true })).toBeVisible();
+    await expect(table.getByText("tui", { exact: true })).toBeVisible();
+
+    // Register: the credential is shown once and identifies the new client.
+    const name = `ci-script-${Date.now().toString(36)}`;
+    const credential = await addClient(page, name);
+    expect(await whoami(request, api, credential)).toEqual({ status: 200, name });
+    expectSecretOnTestPath(configDir);
+    const listed = await listClients(request, api, credential);
+    expect(listed.find((c) => c.name === name)?.builtin).toBe(false);
+    expect(JSON.stringify(listed)).not.toContain(credential);
+
+    // Reissue a built-in: the file the TUI reads is rewritten, the old one dies.
+    const oldTui = readCredential(configDir, "tui");
+    const newTui = await reissueClient(page, "tui");
+    expect(newTui).not.toBe(oldTui);
+    expect(readCredential(configDir, "tui")).toBe(newTui);
+    expect((await whoami(request, api, oldTui)).status).toBe(401);
+    expect(await whoami(request, api, newTui)).toEqual({ status: 200, name: "tui" });
+
+    // Revoke: only this client is cut off.
+    await revokeClient(page, name);
+    expect((await whoami(request, api, credential)).status).toBe(401);
+    expect(await whoami(request, api, newTui)).toEqual({ status: 200, name: "tui" });
+    await expect(table.getByRole("row", { name: new RegExp(name) })).toContainText("Revoked");
+  });
+
+  test("reissuing web-ui in the tab rotates its cookie and a reload still works", async ({
+    page,
+    context,
+    request,
+    baseURL,
+  }) => {
+    const oldWebUi = readCredential(configDir, "web-ui");
     await page.goto("/");
     await expect(page.getByText(FIXTURE_FIRST_MESSAGE)).toBeVisible();
 
     await openSettings(page);
-    const field = page.getByLabel("API token");
-    await expect(field).toHaveValue(oldToken);
-    await expect(field).toHaveAttribute("type", "password");
-    await page.getByRole("button", { name: "Show" }).click();
-    await expect(field).toHaveAttribute("type", "text");
-
-    const newToken = await regenerateToken(page);
-    await expect(field).toHaveValue(newToken);
-    expect(newToken).not.toBe(oldToken);
-    expect(readToken(configDir)).toBe(newToken);
+    const newWebUi = await reissueClient(page, "web-ui");
+    expect(newWebUi).not.toBe(oldWebUi);
+    expect(readCredential(configDir, "web-ui")).toBe(newWebUi);
     expectSecretOnTestPath(configDir);
 
-    // The old token is dead for everyone…
-    const stale = await request.get("/api/settings", { headers: { "X-CCTrace-Token": oldToken } });
-    expect(stale.status()).toBe(401);
-    // …and this tab was re-issued the cookie, so a reload still works.
+    // The reissue response re-set the cookie on this tab…
+    const cookie = (await context.cookies(baseURL!)).find((c) => c.name === "cctrace_token");
+    expect(cookie?.value).toBe(newWebUi);
+    // …the old credential is dead for everyone…
+    expect((await whoami(request, api, oldWebUi)).status).toBe(401);
+    // …and a reload keeps working.
     await page.reload();
     await expect(page.getByText(FIXTURE_FIRST_MESSAGE)).toBeVisible();
+  });
+});
+
+test.describe("revoking web-ui", () => {
+  test("locks browsers out (no cookie, banner) until another client reissues it", async ({
+    browser,
+    request,
+  }) => {
+    await ensureWebUiActive(request, api, configDir);
+    const tui = readCredential(configDir, "tui");
+    const page = await (await browser.newContext()).newPage();
+    try {
+      await page.goto("/");
+      await expect(page.getByText(FIXTURE_FIRST_MESSAGE)).toBeVisible();
+      await openSettings(page);
+      // Two-click confirm; arming warns about exactly what this test proves.
+      const revoke = page.getByRole("button", { name: "Revoke web-ui", exact: true });
+      await revoke.click();
+      await expect(page.getByText(/locks every browser tab/)).toBeVisible();
+      await revoke.click();
+      await expect(page.getByText('"web-ui" revoked')).toBeVisible();
+
+      const shell = await rawGet(port, "/", { Host: `localhost:${port}` });
+      expect(shell.status).toBe(200);
+      expect(shell.headers["set-cookie"]).toBeUndefined();
+
+      const fresh = await (await browser.newContext()).newPage();
+      await fresh.goto("/");
+      await expect(fresh.getByRole("alert")).toContainText("Not an accepted client");
+      await fresh.context().close();
+    } finally {
+      // Another client (here: the TUI's credential, as the desktop app or a
+      // script would) reissues web-ui, and the browser is back in.
+      const restored = await reissueViaApi(request, api, tui, "web-ui");
+      expect(readCredential(configDir, "web-ui")).toBe(restored);
+      await page.context().close();
+    }
+    const back = await (await browser.newContext()).newPage();
+    await back.goto("/");
+    await expect(back.getByText(FIXTURE_FIRST_MESSAGE)).toBeVisible();
+    await back.context().close();
   });
 });

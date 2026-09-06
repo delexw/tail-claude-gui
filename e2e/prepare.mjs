@@ -21,8 +21,8 @@ const fixtures = resolve(root, "e2e/fixtures/projects");
 
 rmSync(tmp, { recursive: true, force: true });
 mkdirSync(tmp, { recursive: true });
-// Timestamp the run so specs can prove no server wrote a token to the *real*
-// config dir (see "keeps the secret on the test path" in same-origin.spec.ts).
+// Timestamp the run so specs can prove no server wrote a secret to the *real*
+// config dir (see "keeps every secret on the test path" in same-origin.spec.ts).
 writeFileSync(resolve(tmp, "started-at"), String(Date.now()));
 for (const shape of ["same", "web"]) {
   mkdirSync(resolve(tmp, shape, "config"), { recursive: true });

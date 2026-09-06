@@ -28,7 +28,7 @@ Headers = Mapping[str, str] | Callable[[], Mapping[str, str]]
 class SSEClient:
     def __init__(self, url: str, headers: Headers | None = None) -> None:
         """`headers` may be a mapping or a zero-arg callable evaluated on every
-        (re)connect — pass `auth.auth_headers` so a rotated API token is picked
+        (re)connect — pass `auth.auth_headers` so a reissued credential is picked
         up when the stream reconnects."""
         self._url = url
         self._headers = headers

@@ -9,10 +9,11 @@
  *   the `HttpOnly` cookie the server sets on the HTML shell.
  * - **web-mode** — the `cctrace --web` shape. The Vite dev server on one port
  *   talks cross-origin to a backend on another; the Vite plugin injects the
- *   shared token, which travels as a header (fetch) and a query param (SSE).
+ *   `web-ui` client's credential, which travels as a header (fetch) and a
+ *   query param (SSE).
  *
  * Everything runs against `e2e/.tmp` (`CCTRACE_CONFIG_DIR`, `CLAUDE_PROJECTS_DIR`)
- * so a run never touches a developer's real token or sessions.
+ * so a run never touches a developer's real secrets or sessions.
  */
 import { defineConfig, devices } from "@playwright/test";
 import { dirname, resolve } from "node:path";
@@ -43,7 +44,7 @@ const isCI = !!process.env.CI;
 export default defineConfig({
   testDir: "./e2e",
   testMatch: /.*\.spec\.ts$/,
-  // Regenerate tests rotate shared server state, so run serially.
+  // Reissue/revoke tests mutate shared server state, so run serially.
   fullyParallel: false,
   workers: 1,
   retries: isCI ? 1 : 0,
@@ -73,7 +74,7 @@ export default defineConfig({
   webServer: [
     {
       command: `node e2e/prepare.mjs && "${binary}" --headless`,
-      // A 401 counts as "up": the probe carries no token on purpose.
+      // A 401 counts as "up": the probe carries no credential on purpose.
       url: `http://127.0.0.1:${E2E.sameOrigin.port}/api/settings`,
       timeout: 15 * 60_000,
       reuseExistingServer: false,

@@ -3,12 +3,13 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 
-use axum::extract::{Query, State};
+use axum::extract::{Path as UrlPath, Query, State};
 use axum::http::{header, HeaderName, HeaderValue, Method};
 use axum::middleware::from_fn_with_state;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::{get, post};
+use axum::Extension;
 use axum::Router;
 use serde::Deserialize;
 use tokio_stream::wrappers::BroadcastStream;
@@ -180,7 +181,7 @@ pub async fn start_http_server_headless(state: Arc<AppState>) {
 ///   only — the static fallback stays public (the SPA shell must load before
 ///   it can authenticate) and unknown paths still 404 rather than 401.
 /// - The static fallback gets its own middleware that hands the token to the
-///   same-origin browser UI as a cookie (see `auth::attach_token_cookie`).
+///   same-origin browser UI as a cookie (see `auth::attach_credential_cookie`).
 /// - CORS is added last, so it runs first: preflights are answered before the
 ///   auth check, and 401 responses carry CORS headers so the browser can read
 ///   the `{"error"}` body.
@@ -190,9 +191,12 @@ fn build_router(state: Arc<HttpState>, static_dir: Option<String>) -> Router {
         .route("/api/settings/dir", post(api_set_projects_dir))
         .route("/api/settings/origins", post(api_set_allowed_origins))
         .route(
-            "/api/settings/token/regenerate",
-            post(api_regenerate_api_token),
+            "/api/clients",
+            get(api_list_clients).post(api_register_client),
         )
+        .route("/api/clients/{id}/reissue", post(api_reissue_client))
+        .route("/api/clients/{id}/revoke", post(api_revoke_client))
+        .route("/api/whoami", get(api_whoami))
         .route(
             "/api/wsl/distros",
             get(api_list_wsl_distros).post(api_set_wsl_distros),
@@ -211,13 +215,16 @@ fn build_router(state: Arc<HttpState>, static_dir: Option<String>) -> Router {
         .route("/api/debug-log", get(api_get_debug_log))
         .route("/api/focus", post(api_focus_session_window))
         .route("/api/events", get(api_events))
-        .route_layer(from_fn_with_state(state.clone(), auth::require_api_token));
+        .route_layer(from_fn_with_state(state.clone(), auth::require_client));
 
     if let Some(dir) = static_dir {
         let serve = ServeDir::new(&dir).append_index_html_on_directories(true);
         let static_ui = Router::new()
             .fallback_service(serve)
-            .layer(from_fn_with_state(state.clone(), auth::attach_token_cookie));
+            .layer(from_fn_with_state(
+                state.clone(),
+                auth::attach_credential_cookie,
+            ));
         router = router.fallback_service(static_ui);
         eprintln!("HTTP API: serving static assets from {dir}");
     }
@@ -275,7 +282,8 @@ async fn api_get_settings(State(state): State<Arc<HttpState>>) -> Response {
     };
     ok_json(&crate::commands::settings::build_response_pub(
         &guard,
-        &app_state.api_auth_snapshot(),
+        &app_state.auth_snapshot(),
+        app_state.clients_snapshot(),
     ))
 }
 
@@ -318,7 +326,8 @@ async fn api_set_projects_dir(
     }
     ok_json(&crate::commands::settings::build_response_pub(
         &guard,
-        &app_state.api_auth_snapshot(),
+        &app_state.auth_snapshot(),
+        app_state.clients_snapshot(),
     ))
 }
 
@@ -350,29 +359,78 @@ async fn api_set_allowed_origins(
     }
     ok_json(&crate::commands::settings::build_response_pub(
         &guard,
-        &app_state.api_auth_snapshot(),
+        &app_state.auth_snapshot(),
+        app_state.clients_snapshot(),
     ))
 }
 
-/// Rotate the shared API token. Reachable only by a caller that already holds
-/// the current token (the route is gated like every other). The new token is
-/// also set as the same-origin cookie so a Docker browser tab rotates in place.
-async fn api_regenerate_api_token(State(state): State<Arc<HttpState>>) -> Response {
-    let app_state = app_state(&state);
-    match crate::commands::api_token::regenerate_api_token_impl(app_state) {
-        Ok(settings) => {
-            let mut response = ok_json(&settings);
-            if let Some(cookie) = settings
-                .api_token
-                .as_deref()
-                .and_then(auth::token_cookie_header)
-            {
-                response.headers_mut().append(header::SET_COOKIE, cookie);
+// ---------------------------------------------------------------------------
+// Accepted clients
+// ---------------------------------------------------------------------------
+
+/// Registered clients — never their credentials.
+async fn api_list_clients(State(state): State<Arc<HttpState>>) -> Response {
+    ok_json(&crate::commands::clients::list_clients_impl(app_state(
+        &state,
+    )))
+}
+
+#[derive(Deserialize)]
+struct RegisterClientBody {
+    name: String,
+}
+
+/// Register a client and return its credential exactly once.
+async fn api_register_client(
+    State(state): State<Arc<HttpState>>,
+    Json(body): Json<RegisterClientBody>,
+) -> Response {
+    match crate::commands::clients::register_client_impl(app_state(&state), &body.name) {
+        Ok(issued) => ok_json(&issued),
+        Err(e) => err_response(axum::http::StatusCode::BAD_REQUEST, e),
+    }
+}
+
+/// Reissue a client's credential, invalidating every older one. When the
+/// client is `web-ui` the new credential is also set as the same-origin
+/// cookie so the Docker browser tab that asked keeps working.
+async fn api_reissue_client(
+    State(state): State<Arc<HttpState>>,
+    UrlPath(id): UrlPath<String>,
+) -> Response {
+    match crate::commands::clients::reissue_client_impl(app_state(&state), &id) {
+        Ok(issued) => {
+            let mut response = ok_json(&issued);
+            if issued.client.name == crate::clients::WEB_UI {
+                if let Some(cookie) = auth::credential_cookie_header(&issued.credential) {
+                    response.headers_mut().append(header::SET_COOKIE, cookie);
+                }
             }
             response
         }
         Err(e) => err_response(axum::http::StatusCode::BAD_REQUEST, e),
     }
+}
+
+async fn api_revoke_client(
+    State(state): State<Arc<HttpState>>,
+    UrlPath(id): UrlPath<String>,
+) -> Response {
+    match crate::commands::clients::revoke_client_impl(app_state(&state), &id) {
+        Ok(client) => ok_json(&client),
+        Err(e) => err_response(axum::http::StatusCode::BAD_REQUEST, e),
+    }
+}
+
+/// Who is calling? `client` is `null` only when verification is disabled
+/// (`CCTRACE_API_AUTH=off`); every other caller was identified by the
+/// middleware.
+async fn api_whoami(identity: Option<Extension<auth::ClientIdentity>>) -> Response {
+    let identity = identity.map(|Extension(i)| i);
+    ok_json(&serde_json::json!({
+        "auth_enabled": identity.is_some(),
+        "client": identity,
+    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -421,7 +479,8 @@ async fn api_set_wsl_distros(
     }
     ok_json(&crate::commands::settings::build_response_pub(
         &guard,
-        &app_state.api_auth_snapshot(),
+        &app_state.auth_snapshot(),
+        app_state.clients_snapshot(),
     ))
 }
 
@@ -857,7 +916,7 @@ mod tests {
     #[test]
     fn build_cors_constructs_without_panicking() {
         let state = Arc::new(crate::state::AppState::for_tests(
-            crate::auth::ApiAuth::Disabled,
+            crate::auth::AuthMode::Disabled,
         ));
         let _ = build_cors(state);
     }
@@ -907,25 +966,46 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Client verification (token middleware) — full router via `oneshot`
+    // Client verification (JWT middleware) — full router via `oneshot`
     // -----------------------------------------------------------------------
 
-    use crate::auth::ApiAuth;
+    use crate::auth::{AuthMode, KeySource};
+    use crate::clients::{ClientRegistry, TUI, WEB_UI};
+    use crate::jwt::Claims;
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use tower::ServiceExt;
 
-    const TOKEN: &str = "test-token-0123456789abcdef";
+    const KEY: &[u8] = b"0123456789abcdef0123456789abcdef";
 
-    fn test_state(auth: ApiAuth) -> Arc<HttpState> {
+    fn enabled() -> AuthMode {
+        AuthMode::Enabled {
+            key: KEY.to_vec(),
+            source: KeySource::Ephemeral,
+        }
+    }
+
+    fn test_state(auth: AuthMode) -> Arc<HttpState> {
         Arc::new(HttpState {
             app_state: Arc::new(crate::state::AppState::for_tests(auth)),
             app: None,
         })
     }
 
-    fn api_router(auth: ApiAuth) -> Router {
+    fn api_router(auth: AuthMode) -> Router {
         build_router(test_state(auth), None)
+    }
+
+    /// A valid credential for the built-in client `name`, minted with the
+    /// test key at the client's current `issued_at`.
+    fn credential_for(state: &HttpState, name: &str) -> String {
+        let client = state
+            .app_state
+            .clients_snapshot()
+            .into_iter()
+            .find(|c| c.name == name)
+            .expect("built-in client registered");
+        crate::auth::issue_credential(&client, KEY, client.issued_at)
     }
 
     fn get(uri: &str) -> Request<Body> {
@@ -940,6 +1020,25 @@ mod tests {
         b.body(Body::empty()).unwrap()
     }
 
+    fn post_json(uri: &str, credential: &str, body: serde_json::Value) -> Request<Body> {
+        Request::builder()
+            .method(Method::POST)
+            .uri(uri)
+            .header("x-cctrace-token", credential)
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap()
+    }
+
+    fn post_empty(uri: &str, credential: &str) -> Request<Body> {
+        Request::builder()
+            .method(Method::POST)
+            .uri(uri)
+            .header("x-cctrace-token", credential)
+            .body(Body::empty())
+            .unwrap()
+    }
+
     async fn body_json(resp: Response) -> serde_json::Value {
         let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
             .await
@@ -947,97 +1046,146 @@ mod tests {
         serde_json::from_slice(&bytes).unwrap()
     }
 
+    async fn whoami(router: Router, headers: &[(&str, &str)]) -> (StatusCode, serde_json::Value) {
+        let resp = router
+            .oneshot(get_with("/api/whoami", headers))
+            .await
+            .unwrap();
+        let status = resp.status();
+        (status, body_json(resp).await)
+    }
+
     #[tokio::test]
-    async fn api_route_without_token_is_401_with_json_error() {
-        let resp = api_router(ApiAuth::File(TOKEN.into()))
+    async fn anonymous_request_is_401_json_with_guidance() {
+        let resp = api_router(enabled())
             .oneshot(get("/api/settings"))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
         let json = body_json(resp).await;
-        assert!(json["error"].as_str().unwrap().contains("API token"));
+        let msg = json["error"].as_str().unwrap();
+        assert!(msg.contains("client credential"), "{msg}");
+        assert!(msg.contains("Accepted clients"), "{msg}");
     }
 
     #[tokio::test]
-    async fn api_route_with_wrong_token_is_401() {
-        let resp = api_router(ApiAuth::File(TOKEN.into()))
-            .oneshot(get_with("/api/settings", &[("x-cctrace-token", "nope")]))
+    async fn every_carrier_identifies_the_calling_client() {
+        let state = test_state(enabled());
+        let tui = credential_for(&state, TUI);
+        let web = credential_for(&state, WEB_UI);
+        let router = build_router(state.clone(), None);
+
+        let (status, json) = whoami(router.clone(), &[("x-cctrace-token", &tui)]).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json["auth_enabled"], true);
+        assert_eq!(json["client"]["name"], "tui");
+        assert!(json["client"]["id"].as_str().is_some());
+
+        let bearer = format!("Bearer {tui}");
+        let (status, json) = whoami(router.clone(), &[("authorization", &bearer)]).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json["client"]["name"], "tui");
+
+        let resp = router
+            .clone()
+            .oneshot(get(&format!("/api/whoami?token={web}")))
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(body_json(resp).await["client"]["name"], "web-ui");
+
+        let cookie = format!("other=1; cctrace_token={web}");
+        let (status, json) = whoami(router, &[("cookie", &cookie)]).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json["client"]["name"], "web-ui");
     }
 
     #[tokio::test]
-    async fn api_route_with_header_token_is_200() {
-        let resp = api_router(ApiAuth::File(TOKEN.into()))
-            .oneshot(get_with("/api/settings", &[("x-cctrace-token", TOKEN)]))
+    async fn settings_report_auth_mode_and_clients_but_no_credentials() {
+        let state = test_state(enabled());
+        let tui = credential_for(&state, TUI);
+        let resp = build_router(state, None)
+            .oneshot(get_with("/api/settings", &[("x-cctrace-token", &tui)]))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         let json = body_json(resp).await;
-        assert_eq!(json["api_token"], TOKEN);
-        assert_eq!(json["api_token_source"], "file");
+        assert_eq!(json["api_auth_enabled"], true);
+        assert_eq!(json["api_auth_source"], "ephemeral");
+        let names: Vec<&str> = json["clients"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["web-ui", "tui"]);
+        assert!(!json.to_string().contains(&tui));
     }
 
     #[tokio::test]
-    async fn api_route_with_bearer_token_is_200() {
-        let resp = api_router(ApiAuth::Env(TOKEN.into()))
-            .oneshot(get_with(
-                "/api/settings",
-                &[("authorization", &format!("Bearer {TOKEN}"))],
-            ))
-            .await
+    async fn forged_foreign_and_unknown_credentials_are_rejected() {
+        let state = test_state(enabled());
+        let tui = credential_for(&state, TUI);
+        let router = build_router(state.clone(), None);
+
+        // Same claims, signed with a different key.
+        let client = state
+            .app_state
+            .clients_snapshot()
+            .into_iter()
+            .find(|c| c.name == TUI)
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
+        let forged =
+            crate::auth::issue_credential(&client, b"not the server key", client.issued_at);
+        let (status, _) = whoami(router.clone(), &[("x-cctrace-token", &forged)]).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+        // Correct key, but the client id is not registered.
+        let unknown = crate::jwt::sign(
+            &Claims {
+                sub: uuid::Uuid::new_v4().to_string(),
+                name: "tui".into(),
+                iat: client.issued_at,
+            },
+            KEY,
+        );
+        let (status, _) = whoami(router.clone(), &[("x-cctrace-token", &unknown)]).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+        // Correct key and client, but minted before the client's issued_at.
+        let stale = crate::auth::issue_credential(&client, KEY, client.issued_at - 1);
+        let (status, _) = whoami(router.clone(), &[("x-cctrace-token", &stale)]).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+        // Tampered payload.
+        let mut parts: Vec<String> = tui.split('.').map(str::to_owned).collect();
+        parts[1].push('x');
+        let (status, _) = whoami(router.clone(), &[("x-cctrace-token", &parts.join("."))]).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+        // Garbage.
+        let (status, _) = whoami(router, &[("x-cctrace-token", "nope")]).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
-    async fn api_route_with_query_token_is_200() {
-        let resp = api_router(ApiAuth::File(TOKEN.into()))
-            .oneshot(get(&format!("/api/settings?token={TOKEN}")))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-    }
+    async fn disabled_mode_accepts_anonymous_callers_without_identity() {
+        let router = api_router(AuthMode::Disabled);
+        let (status, json) = whoami(router.clone(), &[]).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json["auth_enabled"], false);
+        assert!(json["client"].is_null());
 
-    #[tokio::test]
-    async fn api_route_with_cookie_token_is_200() {
-        let resp = api_router(ApiAuth::File(TOKEN.into()))
-            .oneshot(get_with(
-                "/api/settings",
-                &[("cookie", &format!("theme=dark; cctrace_token={TOKEN}"))],
-            ))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-    }
-
-    #[tokio::test]
-    async fn sse_route_accepts_query_token() {
-        let resp = api_router(ApiAuth::File(TOKEN.into()))
-            .oneshot(get(&format!("/api/events?token={TOKEN}")))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-        let ct = resp.headers().get(header::CONTENT_TYPE).unwrap();
-        assert!(ct.to_str().unwrap().starts_with("text/event-stream"));
-    }
-
-    #[tokio::test]
-    async fn auth_disabled_allows_requests_without_token() {
-        let resp = api_router(ApiAuth::Disabled)
-            .oneshot(get("/api/settings"))
-            .await
-            .unwrap();
+        let resp = router.oneshot(get("/api/settings")).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         let json = body_json(resp).await;
         assert_eq!(json["api_auth_enabled"], false);
-        assert!(json["api_token"].is_null());
+        assert_eq!(json["api_auth_source"], "disabled");
     }
 
     #[tokio::test]
-    async fn unknown_path_is_404_not_401() {
-        let resp = api_router(ApiAuth::File(TOKEN.into()))
+    async fn unknown_api_path_is_404_not_401() {
+        let resp = api_router(enabled())
             .oneshot(get("/api/does-not-exist"))
             .await
             .unwrap();
@@ -1045,7 +1193,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cors_preflight_passes_without_token_and_allows_token_header() {
+    async fn cors_preflight_passes_without_credential_and_allows_token_header() {
         let req = Request::builder()
             .method(Method::OPTIONS)
             .uri("/api/settings")
@@ -1054,24 +1202,21 @@ mod tests {
             .header("access-control-request-headers", "x-cctrace-token")
             .body(Body::empty())
             .unwrap();
-        let resp = api_router(ApiAuth::File(TOKEN.into()))
-            .oneshot(req)
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-        let allowed = resp
+        let resp = api_router(enabled()).oneshot(req).await.unwrap();
+        assert_ne!(resp.status(), StatusCode::UNAUTHORIZED);
+        let allow = resp
             .headers()
             .get("access-control-allow-headers")
-            .unwrap()
-            .to_str()
-            .unwrap()
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
             .to_ascii_lowercase();
-        assert!(allowed.contains("x-cctrace-token"), "{allowed}");
+        assert!(allow.contains("x-cctrace-token"), "{allow}");
+        assert!(allow.contains("authorization"), "{allow}");
     }
 
     #[tokio::test]
-    async fn unauthorized_response_still_carries_cors_headers() {
-        let resp = api_router(ApiAuth::File(TOKEN.into()))
+    async fn unauthorized_response_carries_cors_headers_for_allowed_origin() {
+        let resp = api_router(enabled())
             .oneshot(get_with(
                 "/api/settings",
                 &[("origin", "http://localhost:1420")],
@@ -1088,120 +1233,208 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn regenerate_rotates_live_token_so_old_token_is_rejected() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("api-token");
-        std::fs::write(&path, format!("{TOKEN}\n")).unwrap();
-        let state = test_state(ApiAuth::File(TOKEN.into()));
-
-        let new_token = state
-            .app_state
-            .regenerate_api_token_at(Some(&path))
-            .unwrap();
-
-        let old = build_router(state.clone(), None)
-            .oneshot(get_with("/api/settings", &[("x-cctrace-token", TOKEN)]))
-            .await
-            .unwrap();
-        assert_eq!(old.status(), StatusCode::UNAUTHORIZED);
-
-        let fresh = build_router(state, None)
-            .oneshot(get_with(
-                "/api/settings",
-                &[("x-cctrace-token", &new_token)],
-            ))
-            .await
-            .unwrap();
-        assert_eq!(fresh.status(), StatusCode::OK);
-    }
-
-    #[tokio::test]
-    async fn mismatch_re_reads_a_rotated_token_file_before_rejecting() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("api-token");
-        std::fs::write(&path, "rotated-by-other-process\n").unwrap();
-        let state = test_state(ApiAuth::File(TOKEN.into()));
-        state.app_state.set_api_token_path(Some(path));
-
-        // The token in the file (rotated by another process) is accepted…
-        let fresh = build_router(state.clone(), None)
-            .oneshot(get_with(
-                "/api/settings",
-                &[("x-cctrace-token", "rotated-by-other-process")],
-            ))
-            .await
-            .unwrap();
-        assert_eq!(fresh.status(), StatusCode::OK);
-        // …and from then on the stale in-memory token is rejected.
-        let stale = build_router(state.clone(), None)
-            .oneshot(get_with("/api/settings", &[("x-cctrace-token", TOKEN)]))
-            .await
-            .unwrap();
-        assert_eq!(stale.status(), StatusCode::UNAUTHORIZED);
-        // A wrong token still fails even though the file exists.
-        let wrong = build_router(state, None)
-            .oneshot(get_with("/api/settings", &[("x-cctrace-token", "nope")]))
-            .await
-            .unwrap();
-        assert_eq!(wrong.status(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    async fn sse_route_accepts_percent_encoded_env_token_in_query() {
-        let resp = api_router(ApiAuth::Env("my/secret+key".into()))
-            .oneshot(get("/api/events?token=my%2Fsecret%2Bkey"))
+    async fn sse_route_accepts_percent_encoded_credential_in_query() {
+        let state = test_state(enabled());
+        let tui = credential_for(&state, TUI);
+        // base64url never contains `%`, so encode a few characters by hand to
+        // prove the decoder runs; `.` and `-` are the only punctuation present.
+        let encoded = tui.replace('.', "%2E").replacen('-', "%2D", 1);
+        assert_ne!(encoded, tui);
+        let resp = build_router(state, None)
+            .oneshot(get(&format!("/api/events?token={encoded}")))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
     }
 
+    // -- client management over HTTP -----------------------------------------
+
     #[tokio::test]
-    async fn regenerate_route_rejects_ephemeral_source() {
-        let router = api_router(ApiAuth::Ephemeral(TOKEN.into()));
-        let req = Request::builder()
-            .method(Method::POST)
-            .uri("/api/settings/token/regenerate")
-            .header("x-cctrace-token", TOKEN)
-            .body(Body::empty())
+    async fn register_list_reissue_revoke_roundtrip_over_http() {
+        let state = test_state(enabled());
+        let tui = credential_for(&state, TUI);
+        let router = build_router(state, None);
+
+        // Register.
+        let resp = router
+            .clone()
+            .oneshot(post_json(
+                "/api/clients",
+                &tui,
+                serde_json::json!({ "name": "ci-script" }),
+            ))
+            .await
             .unwrap();
-        let resp = router.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let issued = body_json(resp).await;
+        let id = issued["client"]["id"].as_str().unwrap().to_owned();
+        let cred = issued["credential"].as_str().unwrap().to_owned();
+        assert_eq!(issued["client"]["name"], "ci-script");
+        assert_eq!(issued["client"]["builtin"], false);
+
+        // The new client is identified by name.
+        let (status, json) = whoami(router.clone(), &[("x-cctrace-token", &cred)]).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json["client"]["name"], "ci-script");
+        assert_eq!(json["client"]["id"], id);
+
+        // List never leaks credentials.
+        let resp = router
+            .clone()
+            .oneshot(get_with("/api/clients", &[("x-cctrace-token", &cred)]))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let list = body_json(resp).await;
+        assert_eq!(list.as_array().unwrap().len(), 3);
+        assert!(!list.to_string().contains(&cred));
+
+        // Duplicate name → 400.
+        let resp = router
+            .clone()
+            .oneshot(post_json(
+                "/api/clients",
+                &tui,
+                serde_json::json!({ "name": "CI-Script" }),
+            ))
+            .await
+            .unwrap();
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-        let json = body_json(resp).await;
-        assert!(json["error"]
+        assert!(body_json(resp).await["error"]
             .as_str()
             .unwrap()
-            .contains("could not be persisted"));
-        assert!(!json["error"]
-            .as_str()
-            .unwrap()
-            .contains("CCTRACE_API_TOKEN"));
+            .contains("already exists"));
+
+        // Reissue: the old credential dies, the new one works.
+        let resp = router
+            .clone()
+            .oneshot(post_empty(&format!("/api/clients/{id}/reissue"), &tui))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(set_cookie(&resp).is_none(), "only web-ui gets a cookie");
+        let reissued = body_json(resp).await;
+        let cred2 = reissued["credential"].as_str().unwrap().to_owned();
+        assert_ne!(cred2, cred);
+        let (status, _) = whoami(router.clone(), &[("x-cctrace-token", &cred)]).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        let (status, _) = whoami(router.clone(), &[("x-cctrace-token", &cred2)]).await;
+        assert_eq!(status, StatusCode::OK);
+
+        // Revoke: nothing of this client works any more.
+        let resp = router
+            .clone()
+            .oneshot(post_empty(&format!("/api/clients/{id}/revoke"), &tui))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let revoked = body_json(resp).await;
+        assert!(revoked["revoked_at"].as_i64().is_some());
+        let (status, _) = whoami(router.clone(), &[("x-cctrace-token", &cred2)]).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+        // Bad ids → 400, and management routes are themselves gated.
+        let resp = router
+            .clone()
+            .oneshot(post_empty("/api/clients/not-a-uuid/revoke", &tui))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let resp = router
+            .oneshot(post_empty(&format!("/api/clients/{id}/reissue"), &cred2))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
-    async fn regenerate_route_requires_token_and_rejects_env_source() {
-        let router = api_router(ApiAuth::Env(TOKEN.into()));
-        let post = |headers: &[(&str, &str)]| {
-            let mut b = Request::builder()
-                .method(Method::POST)
-                .uri("/api/settings/token/regenerate");
-            for (k, v) in headers {
-                b = b.header(*k, *v);
-            }
-            b.body(Body::empty()).unwrap()
-        };
-        let denied = router.clone().oneshot(post(&[])).await.unwrap();
-        assert_eq!(denied.status(), StatusCode::UNAUTHORIZED);
+    async fn reissuing_web_ui_sets_the_new_cookie_and_swaps_the_live_credential() {
+        let state = test_state(enabled());
+        let old_web = credential_for(&state, WEB_UI);
+        let web_id = state
+            .app_state
+            .clients_snapshot()
+            .into_iter()
+            .find(|c| c.name == WEB_UI)
+            .unwrap()
+            .id;
+        let router = build_router(state.clone(), None);
 
-        let rejected = router
-            .oneshot(post(&[("x-cctrace-token", TOKEN)]))
+        let resp = router
+            .clone()
+            .oneshot(post_empty(
+                &format!("/api/clients/{web_id}/reissue"),
+                &old_web,
+            ))
             .await
             .unwrap();
-        assert_eq!(rejected.status(), StatusCode::BAD_REQUEST);
-        let json = body_json(rejected).await;
-        assert!(json["error"]
+        assert_eq!(resp.status(), StatusCode::OK);
+        let cookie = set_cookie(&resp).expect("web-ui reissue sets the cookie");
+        let issued = body_json(resp).await;
+        let new_web = issued["credential"].as_str().unwrap().to_owned();
+        assert!(cookie.starts_with(&format!("cctrace_token={new_web};")));
+        assert!(cookie.contains("HttpOnly"));
+        assert_eq!(
+            state.app_state.web_ui_credential().as_deref(),
+            Some(new_web.as_str())
+        );
+
+        let (status, _) = whoami(router.clone(), &[("x-cctrace-token", &old_web)]).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        let cookie_hdr = format!("cctrace_token={new_web}");
+        let (status, json) = whoami(router, &[("cookie", &cookie_hdr)]).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json["client"]["name"], "web-ui");
+    }
+
+    #[tokio::test]
+    async fn disabled_mode_refuses_to_manage_clients() {
+        let resp = api_router(AuthMode::Disabled)
+            .oneshot(post_json(
+                "/api/clients",
+                "",
+                serde_json::json!({ "name": "x" }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        assert!(body_json(resp).await["error"]
             .as_str()
             .unwrap()
-            .contains("CCTRACE_API_TOKEN"));
+            .contains("disabled"));
+    }
+
+    #[tokio::test]
+    async fn credential_registered_by_another_process_is_accepted_after_disk_refresh() {
+        let root = tempfile::tempdir().unwrap();
+        let state = test_state(enabled());
+        state
+            .app_state
+            .set_config_root(Some(root.path().to_path_buf()));
+
+        // "Another process" shares the registry file: start from this one's
+        // clients, add a new client, persist.
+        let mut other = ClientRegistry {
+            clients: state.app_state.clients_snapshot(),
+        };
+        let client = other.register("sidecar", crate::clients::now()).unwrap();
+        other
+            .save(&crate::auth::registry_path(root.path()))
+            .unwrap();
+        let cred = crate::auth::issue_credential(&client, KEY, client.issued_at);
+
+        let (status, json) = whoami(
+            build_router(state.clone(), None),
+            &[("x-cctrace-token", &cred)],
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json["client"]["name"], "sidecar");
+        assert!(state
+            .app_state
+            .clients_snapshot()
+            .iter()
+            .any(|c| c.name == "sidecar"));
     }
 
     // -- static fallback + cookie -------------------------------------------
@@ -1217,7 +1450,7 @@ mod tests {
         dir
     }
 
-    fn static_router(auth: ApiAuth, dir: &tempfile::TempDir) -> Router {
+    fn static_router(auth: AuthMode, dir: &tempfile::TempDir) -> Router {
         build_router(
             test_state(auth),
             Some(dir.path().to_string_lossy().to_string()),
@@ -1232,59 +1465,48 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn static_fallback_serves_without_token() {
+    async fn static_fallback_serves_without_credential() {
         let dir = static_dir();
-        let resp = static_router(ApiAuth::File(TOKEN.into()), &dir)
+        let resp = static_router(enabled(), &dir)
             .oneshot(get_with("/app.js", &[("host", "localhost:1421")]))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-        // Non-HTML assets never carry the cookie.
-        assert!(set_cookie(&resp).is_none());
+        assert!(set_cookie(&resp).is_none(), "assets never carry the cookie");
     }
 
     #[tokio::test]
-    async fn static_index_sets_token_cookie_for_localhost_host() {
+    async fn static_index_sets_web_ui_cookie_for_loopback_host() {
         let dir = static_dir();
-        let resp = static_router(ApiAuth::File(TOKEN.into()), &dir)
+        let state = test_state(enabled());
+        let web = state.app_state.web_ui_credential().unwrap();
+        let resp = build_router(state, Some(dir.path().to_string_lossy().to_string()))
             .oneshot(get_with("/", &[("host", "localhost:1421")]))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-        let cookie = set_cookie(&resp).expect("Set-Cookie present");
-        assert!(
-            cookie.starts_with(&format!("cctrace_token={TOKEN};")),
-            "{cookie}"
-        );
+        let cookie = set_cookie(&resp).unwrap();
+        assert!(cookie.starts_with(&format!("cctrace_token={web};")));
         assert!(cookie.contains("HttpOnly"));
         assert!(cookie.contains("SameSite=Strict"));
+        assert_eq!(crate::jwt::verify(&web, KEY).unwrap().name, "web-ui");
     }
 
     #[tokio::test]
-    async fn static_index_does_not_set_cookie_for_unknown_host() {
+    async fn static_index_sets_no_cookie_for_unknown_host() {
         let dir = static_dir();
-        let resp = static_router(ApiAuth::File(TOKEN.into()), &dir)
+        let resp = static_router(enabled(), &dir)
             .oneshot(get_with("/", &[("host", "attacker.example:1421")]))
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK, "the page still loads");
-        assert!(set_cookie(&resp).is_none(), "but no token cookie is issued");
-    }
-
-    #[tokio::test]
-    async fn static_index_does_not_set_cookie_without_host_header() {
-        let dir = static_dir();
-        let resp = static_router(ApiAuth::File(TOKEN.into()), &dir)
-            .oneshot(get("/"))
-            .await
-            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
         assert!(set_cookie(&resp).is_none());
     }
 
     #[tokio::test]
     async fn static_index_sets_cookie_for_settings_allowlisted_host() {
         let dir = static_dir();
-        let state = test_state(ApiAuth::File(TOKEN.into()));
+        let state = test_state(enabled());
         state.app_state.settings.lock().unwrap().allowed_origins =
             vec!["https://cctrace.example.com".to_string()];
         let resp = build_router(state, Some(dir.path().to_string_lossy().to_string()))
@@ -1297,7 +1519,27 @@ mod tests {
     #[tokio::test]
     async fn static_index_sets_no_cookie_when_auth_disabled() {
         let dir = static_dir();
-        let resp = static_router(ApiAuth::Disabled, &dir)
+        let resp = static_router(AuthMode::Disabled, &dir)
+            .oneshot(get_with("/", &[("host", "localhost:1421")]))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(set_cookie(&resp).is_none());
+    }
+
+    #[tokio::test]
+    async fn static_index_sets_no_cookie_once_web_ui_is_revoked() {
+        let dir = static_dir();
+        let state = test_state(enabled());
+        let web_id = state
+            .app_state
+            .clients_snapshot()
+            .into_iter()
+            .find(|c| c.name == WEB_UI)
+            .unwrap()
+            .id;
+        state.app_state.revoke_client(web_id).unwrap();
+        let resp = build_router(state, Some(dir.path().to_string_lossy().to_string()))
             .oneshot(get_with("/", &[("host", "localhost:1421")]))
             .await
             .unwrap();
@@ -1308,7 +1550,7 @@ mod tests {
     #[tokio::test]
     async fn api_routes_stay_gated_when_static_fallback_is_mounted() {
         let dir = static_dir();
-        let resp = static_router(ApiAuth::File(TOKEN.into()), &dir)
+        let resp = static_router(enabled(), &dir)
             .oneshot(get_with("/api/settings", &[("host", "localhost:1421")]))
             .await
             .unwrap();
