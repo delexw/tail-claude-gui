@@ -3,12 +3,19 @@
 All notable changes to claude-code-trace are documented here. Versions follow
 [semantic versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.15.0] — 2026-09-08
+
+A short release that finishes what v0.14.0 started. Locking the local API behind a single shared
+token told the backend that a caller was allowed in, but not who it was — so there was no way to
+cut off one tool without cutting off all of them. Every caller is now a named client with its own
+credential that can be revoked or reissued on its own. Regenerating a credential in the web UI
+also stops throwing you out of the Settings dialog you did it from.
 
 ### Changed
 
 - **Every API client now has its own identity: per-client signed credentials replace the shared
-  token.** v0.14.0 proved a caller was _an_ accepted client but not _which_ one, and revoking one
+  token** ([`6b09244`](https://github.com/delexw/claude-code-trace/commit/6b09244)). v0.14.0
+  proved a caller was _an_ accepted client but not _which_ one, and revoking one
   meant rotating everybody. Now every caller of `/api/*` is a registered **client** with a name and
   an HS256 credential (`{ sub: <client id>, name, iat }`, no expiry); the backend attaches the
   caller's identity to each request (`GET /api/whoami`). Clients can be **revoked** or **reissued**
@@ -29,6 +36,20 @@ All notable changes to claude-code-trace are documented here. Versions follow
   clients in the config dir; the old `api-token` file is ignored and can be deleted.
   `CCTRACE_API_AUTH=off` still disables verification. Existing browser tabs and TUIs pick the new
   credentials up on reload / next request.
+
+### Fixed
+
+- **Regenerating a credential no longer closes the Settings dialog you did it from**
+  ([`4382147`](https://github.com/delexw/claude-code-trace/commit/4382147)). In `cctrace --web`
+  the browser gets its credential from the dev server, which watched the credential file and
+  restarted itself whenever it changed. Clicking Regenerate in Settings rewrote that file, so the
+  restart reloaded the page and tore down the very dialog you were standing in — the new value
+  appeared, but only after the UI had thrown you back to the start. The dev server now pushes the
+  new credential into the running page instead of restarting, so the dialog stays open and the
+  live SSE stream reconnects on its own. Rotations performed by another `cctrace` process are
+  picked up the same way, and production bundles still never contain a credential.
+
+[0.15.0]: https://github.com/delexw/claude-code-trace/releases/tag/v0.15.0
 
 ## [0.14.0] — 2026-09-06
 
