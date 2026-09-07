@@ -223,13 +223,37 @@ describe("invoke (web/HTTP mode) — API client token", () => {
     expect(err).not.toBeInstanceOf(ApiAuthError);
   });
 
-  it("regenerate_api_token posts to /api/settings/token/regenerate", async () => {
-    const fetchFn = mockFetch({ api_token: "fresh" });
+  it("list_clients gets /api/clients and whoami gets /api/whoami", async () => {
+    const fetchFn = mockFetch([]);
     const { invoke } = await import("./invoke");
-    const res = await invoke<{ api_token: string }>("regenerate_api_token");
-    expect(res.api_token).toBe("fresh");
+    await invoke("list_clients");
+    expect(fetchFn).toHaveBeenCalledWith(`${API_BASE}/api/clients`, expect.anything());
+    await invoke("whoami");
+    expect(fetchFn).toHaveBeenCalledWith(`${API_BASE}/api/whoami`, expect.anything());
+  });
+
+  it("register_client posts the name to /api/clients", async () => {
+    const fetchFn = mockFetch({ client: { name: "ci" }, credential: "eyJ.x.y" });
+    const { invoke } = await import("./invoke");
+    const res = await invoke<{ credential: string }>("register_client", { name: "ci" });
+    expect(res.credential).toBe("eyJ.x.y");
     expect(fetchFn).toHaveBeenCalledWith(
-      `${API_BASE}/api/settings/token/regenerate`,
+      `${API_BASE}/api/clients`,
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ name: "ci" }) }),
+    );
+  });
+
+  it("reissue_client and revoke_client put the (encoded) id in the path", async () => {
+    const fetchFn = mockFetch({});
+    const { invoke } = await import("./invoke");
+    await invoke("reissue_client", { id: "abc-123" });
+    expect(fetchFn).toHaveBeenCalledWith(
+      `${API_BASE}/api/clients/abc-123/reissue`,
+      expect.objectContaining({ method: "POST" }),
+    );
+    await invoke("revoke_client", { id: "a/b" });
+    expect(fetchFn).toHaveBeenCalledWith(
+      `${API_BASE}/api/clients/a%2Fb/revoke`,
       expect.objectContaining({ method: "POST" }),
     );
   });

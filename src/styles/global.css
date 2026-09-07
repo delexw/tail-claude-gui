@@ -2896,18 +2896,67 @@ body {
   border-color: var(--accent);
 }
 
-/* Settings → API access: token field with Show / Copy / Regenerate. */
-.settings-modal__token-row {
+/* Settings → Accepted clients: registry table, add-client row, and the
+   show-once credential row. */
+.settings-modal__clients {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.settings-modal__clients th,
+.settings-modal__clients td {
+  padding: 4px 6px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.settings-modal__clients th {
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.settings-modal__client-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.settings-modal__client-badge {
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.settings-modal__client-status--revoked {
+  color: var(--error);
+}
+
+.settings-modal__client-actions {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.settings-modal__client-actions .settings-modal__btn + .settings-modal__btn {
+  margin-left: 4px;
+}
+
+.settings-modal__credential-row {
   display: flex;
   gap: 6px;
   align-items: center;
 }
 
-.settings-modal__token-row .settings-modal__input--token {
+.settings-modal__credential-row .settings-modal__input {
   flex: 1;
   min-width: 0;
+}
+
+.settings-modal__credential-row .settings-modal__input--credential {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .settings-modal__hint {

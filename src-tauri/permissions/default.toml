@@ -17,7 +17,10 @@ permissions = [
   "allow-list-wsl-distros",
   "allow-set-wsl-distros",
   "allow-set-allowed-origins",
-  "allow-regenerate-api-token",
+  "allow-list-clients",
+  "allow-register-client",
+  "allow-reissue-client",
+  "allow-revoke-client",
   "allow-switch-to-browser",
   "allow-focus-session-window",
 ]
@@ -103,9 +106,24 @@ description = "Allow setting extra CORS allowed origins"
 commands.allow = ["set_allowed_origins"]
 
 [[permission]]
-identifier = "allow-regenerate-api-token"
-description = "Allow rotating the shared HTTP API client token"
-commands.allow = ["regenerate_api_token"]
+identifier = "allow-list-clients"
+description = "Allow listing the accepted HTTP API clients"
+commands.allow = ["list_clients"]
+
+[[permission]]
+identifier = "allow-register-client"
+description = "Allow registering a new accepted HTTP API client"
+commands.allow = ["register_client"]
+
+[[permission]]
+identifier = "allow-reissue-client"
+description = "Allow reissuing an accepted client's credential"
+commands.allow = ["reissue_client"]
+
+[[permission]]
+identifier = "allow-revoke-client"
+description = "Allow revoking an accepted HTTP API client"
+commands.allow = ["revoke_client"]
 
 [[permission]]
 identifier = "allow-switch-to-browser"

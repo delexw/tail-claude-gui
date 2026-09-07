@@ -10,7 +10,7 @@ pub mod session;
 
 // Modules with impl functions the HTTP API also uses. These stay compiled in
 // all builds; only their `#[tauri::command]` wrappers are desktop-gated.
-pub mod api_token;
+pub mod clients;
 pub mod cors;
 pub mod git;
 pub mod settings;

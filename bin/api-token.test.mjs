@@ -12,16 +12,12 @@ vi.mock("node:fs", () => {
 
 const { platform } = await import("node:os");
 const { readFileSync, writeFileSync, mkdirSync } = await import("node:fs");
-const { configDir, appConfigRoot, apiTokenPath, resolveApiToken } = await import("./api-token.mjs");
+const { configDir, appConfigRoot, webUiCredentialPath, readWebUiCredential } =
+  await import("./api-token.mjs");
 
 const enoent = () => {
   const e = new Error("ENOENT");
   e.code = "ENOENT";
-  throw e;
-};
-const eexist = () => {
-  const e = new Error("EEXIST");
-  e.code = "EEXIST";
   throw e;
 };
 
@@ -61,17 +57,19 @@ describe("configDir", () => {
   });
 });
 
-describe("apiTokenPath", () => {
-  it("is the api-token file inside the app's config dir", () => {
-    expect(apiTokenPath({ platform: "linux", env: {}, home: "/h" })).toBe(
-      "/h/.config/claude-code-trace/api-token",
+describe("webUiCredentialPath", () => {
+  it("is clients/web-ui.jwt inside the app's config dir", () => {
+    expect(webUiCredentialPath({ platform: "linux", env: {}, home: "/h" })).toBe(
+      "/h/.config/claude-code-trace/clients/web-ui.jwt",
     );
   });
 
   it("honours CCTRACE_CONFIG_DIR as the whole config root", () => {
     const env = { CCTRACE_CONFIG_DIR: " /e2e/cfg ", XDG_CONFIG_HOME: "/ignored" };
     expect(appConfigRoot({ platform: "linux", env, home: "/h" })).toBe("/e2e/cfg");
-    expect(apiTokenPath({ platform: "linux", env, home: "/h" })).toBe("/e2e/cfg/api-token");
+    expect(webUiCredentialPath({ platform: "linux", env, home: "/h" })).toBe(
+      "/e2e/cfg/clients/web-ui.jwt",
+    );
     // Blank override falls through to the OS location.
     expect(
       appConfigRoot({ platform: "linux", env: { CCTRACE_CONFIG_DIR: "  " }, home: "/h" }),
@@ -79,64 +77,33 @@ describe("apiTokenPath", () => {
   });
 });
 
-describe("resolveApiToken", () => {
+describe("readWebUiCredential", () => {
   const opts = { platform: "linux", home: "/h" };
-  const path = "/h/.config/claude-code-trace/api-token";
+  const path = "/h/.config/claude-code-trace/clients/web-ui.jwt";
 
   it("returns null when CCTRACE_API_AUTH=off, without touching the file", () => {
-    expect(resolveApiToken({ ...opts, env: { CCTRACE_API_AUTH: " OFF " } })).toBeNull();
-    expect(readFileSync).not.toHaveBeenCalled();
-    expect(writeFileSync).not.toHaveBeenCalled();
-  });
-
-  it("prefers CCTRACE_API_TOKEN over the file", () => {
-    readFileSync.mockReturnValue("filetoken\n");
-    expect(resolveApiToken({ ...opts, env: { CCTRACE_API_TOKEN: " envtoken " } })).toBe("envtoken");
+    expect(readWebUiCredential({ ...opts, env: { CCTRACE_API_AUTH: " OFF " } })).toBeNull();
     expect(readFileSync).not.toHaveBeenCalled();
   });
 
-  it("reads and trims an existing token file", () => {
-    readFileSync.mockReturnValue("  abc123 \n");
-    expect(resolveApiToken({ ...opts, env: {} })).toBe("abc123");
+  it("reads and trims the credential file", () => {
+    readFileSync.mockReturnValue("  eyJ.abc.def \n");
+    expect(readWebUiCredential({ ...opts, env: {} })).toBe("eyJ.abc.def");
     expect(readFileSync).toHaveBeenCalledWith(path, "utf8");
+  });
+
+  it("returns null when the backend has not written the file yet", () => {
+    expect(readWebUiCredential({ ...opts, env: {} })).toBeNull();
+  });
+
+  it("returns null for an empty file", () => {
+    readFileSync.mockReturnValue("\n");
+    expect(readWebUiCredential({ ...opts, env: {} })).toBeNull();
+  });
+
+  it("never creates or writes anything — only the backend mints credentials", () => {
+    readWebUiCredential({ ...opts, env: {} });
     expect(writeFileSync).not.toHaveBeenCalled();
-  });
-
-  it("creates a 64-hex token with O_EXCL and mode 0600 when the file is missing", () => {
-    const token = resolveApiToken({ ...opts, env: {} });
-    expect(token).toMatch(/^[0-9a-f]{64}$/);
-    expect(mkdirSync).toHaveBeenCalledWith("/h/.config/claude-code-trace", { recursive: true });
-    expect(writeFileSync).toHaveBeenCalledWith(path, `${token}\n`, { flag: "wx", mode: 0o600 });
-  });
-
-  it("re-reads the winner's token when the backend created the file first (EEXIST)", () => {
-    readFileSync.mockImplementationOnce(enoent).mockImplementation(() => "winner\n");
-    writeFileSync.mockImplementation(eexist);
-    expect(resolveApiToken({ ...opts, env: {} })).toBe("winner");
-  });
-
-  it("waits for the winner to finish writing when the file is momentarily empty", () => {
-    readFileSync
-      .mockImplementationOnce(enoent) // initial probe: not there yet
-      .mockImplementationOnce(() => "") // EEXIST: created but not yet written
-      .mockImplementationOnce(() => "\n")
-      .mockImplementation(() => "winner\n");
-    writeFileSync.mockImplementation(eexist);
-    expect(resolveApiToken({ ...opts, env: {} })).toBe("winner");
-  });
-
-  it("throws instead of fabricating a token when the file stays empty", () => {
-    readFileSync.mockImplementationOnce(enoent).mockImplementation(() => "");
-    writeFileSync.mockImplementation(eexist);
-    expect(() => resolveApiToken({ ...opts, env: {} })).toThrow(/exists but is empty/);
-  });
-
-  it("rethrows unexpected write errors", () => {
-    writeFileSync.mockImplementation(() => {
-      const e = new Error("EACCES");
-      e.code = "EACCES";
-      throw e;
-    });
-    expect(() => resolveApiToken({ ...opts, env: {} })).toThrow("EACCES");
+    expect(mkdirSync).not.toHaveBeenCalled();
   });
 });

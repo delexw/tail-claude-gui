@@ -38,7 +38,21 @@ const routes: Record<string, Route> = {
     path: "/api/settings/origins",
     body: (a) => ({ origins: (a.origins as string[]) ?? [] }),
   },
-  regenerate_api_token: { method: "POST", path: "/api/settings/token/regenerate" },
+  list_clients: { path: "/api/clients" },
+  register_client: {
+    method: "POST",
+    path: "/api/clients",
+    body: (a) => ({ name: String(a.name ?? "") }),
+  },
+  reissue_client: {
+    method: "POST",
+    path: (a) => `/api/clients/${encodeURIComponent(String(a.id ?? ""))}/reissue`,
+  },
+  revoke_client: {
+    method: "POST",
+    path: (a) => `/api/clients/${encodeURIComponent(String(a.id ?? ""))}/revoke`,
+  },
+  whoami: { path: "/api/whoami" },
   get_project_dirs: { path: "/api/project-dirs" },
   discover_sessions: {
     method: "POST",
@@ -93,8 +107,8 @@ const routes: Record<string, Route> = {
 // HTTP transport (SRP — only handles fetch, not routing).
 // ---------------------------------------------------------------------------
 
-/** The backend rejected the call because this client did not present the
- * shared API token (HTTP 401). Surfaced by `App` as a top-level banner since
+/** The backend rejected the call because this client did not present a valid
+ * client credential (HTTP 401). Surfaced by `App` as a top-level banner since
  * every other call — including opening Settings — would fail the same way. */
 export class ApiAuthError extends Error {
   constructor(message: string) {
@@ -106,8 +120,9 @@ export class ApiAuthError extends Error {
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
-    // The token header is what makes this an "accepted client" to the backend
-    // (see lib/apiToken.ts). In Docker it is empty and the cookie does the job.
+    // The credential header is what makes this an "accepted client" to the
+    // backend (see lib/apiToken.ts). In Docker it is empty and the cookie does
+    // the job.
     headers: { "Content-Type": "application/json", ...authHeaders(), ...init?.headers },
   });
   if (!res.ok) {

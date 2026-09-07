@@ -5,8 +5,10 @@ use tokio::sync::broadcast;
 
 use std::collections::HashMap;
 
-use crate::auth::ApiAuth;
+use crate::auth::{AuthMode, ClientIdentity, ResolvedAuth};
+use crate::clients::{self, Client, ClientRegistry};
 use crate::convert::{DisplayMessage, LoadResult};
+use crate::jwt::Claims;
 use crate::parser::cache::SessionCache;
 use crate::parser::session::{Liveness, LivenessCache, SessionInfo, SessionNamesCache};
 use crate::session_load::{
@@ -63,13 +65,17 @@ pub struct AppState {
     pub picker_watcher: Mutex<Option<WatcherHandle>>,
     pub session_cache: Mutex<SessionCache>,
     pub settings: Mutex<Settings>,
-    /// Live API client-verification mode (see `crate::auth`). Read on every
-    /// HTTP request by the auth middleware; swapped by Settings → Regenerate.
-    pub api_auth: RwLock<ApiAuth>,
-    /// Where the shared token file lives (`None` when there is no config dir).
-    /// Read by Regenerate and by the on-mismatch re-read in the auth
-    /// middleware; overridable for tests so they never touch the real file.
-    pub api_token_path: RwLock<Option<PathBuf>>,
+    /// Live client-verification mode (see `crate::auth`), read on every request.
+    pub auth: RwLock<AuthMode>,
+    /// Accepted clients — the source of truth for revocation and reissue.
+    pub clients: RwLock<ClientRegistry>,
+    /// The `web-ui` client's current credential, issued as the same-origin
+    /// cookie; `None` when disabled or revoked.
+    pub web_ui_credential: RwLock<Option<String>>,
+    /// Config dir holding `clients.json` and `clients/*.jwt`. `None` means
+    /// in-memory only (ephemeral key, or tests — which must never touch a
+    /// developer's real files).
+    pub config_root: RwLock<Option<PathBuf>>,
     /// Ongoing status reported by the session watcher for the currently viewed session.
     /// (session_path, is_ongoing) — kept in sync by the session watcher loop.
     pub watched_session_ongoing: Mutex<Option<(String, bool)>>,
@@ -92,18 +98,36 @@ pub struct AppState {
     session_light_cache: Mutex<Option<CachedLight>>,
 }
 
+/// The on-disk registry, when it is safe to adopt at runtime: the file must
+/// exist, parse, and still know every built-in client. A missing or emptied
+/// `clients.json` (someone "resetting" while the server runs) or a half-edited
+/// one must not lock every client out; startup handles those cases instead.
+fn load_adoptable_registry(root: &Path) -> Option<ClientRegistry> {
+    let path = crate::auth::registry_path(root);
+    if !path.exists() {
+        return None;
+    }
+    let on_disk = ClientRegistry::load(&path).ok()?;
+    clients::BUILTIN_NAMES
+        .iter()
+        .all(|name| on_disk.find_by_name(name).is_some())
+        .then_some(on_disk)
+}
+
 impl AppState {
-    /// `api_auth` is injected rather than resolved here so tests never touch
-    /// the developer's real token file — see `crate::auth::resolve_api_auth`.
-    pub fn new(api_auth: ApiAuth) -> Self {
+    /// Everything auth-related is injected (see `crate::auth::resolve_auth`) so
+    /// construction itself never touches the filesystem.
+    pub fn new(resolved: ResolvedAuth) -> Self {
         let (event_tx, _) = broadcast::channel(64);
         Self {
             session_watcher: Mutex::new(None),
             picker_watcher: Mutex::new(None),
             session_cache: Mutex::new(SessionCache::new()),
             settings: Mutex::new(crate::settings::load_settings()),
-            api_auth: RwLock::new(api_auth),
-            api_token_path: RwLock::new(crate::auth::token_file_path()),
+            auth: RwLock::new(resolved.mode),
+            clients: RwLock::new(resolved.registry),
+            web_ui_credential: RwLock::new(resolved.web_ui_credential),
+            config_root: RwLock::new(resolved.config_root),
             watched_session_ongoing: Mutex::new(None),
             event_tx,
             sessions_cache: Mutex::new(None),
@@ -113,107 +137,219 @@ impl AppState {
         }
     }
 
+    /// Test constructor: the given mode, the built-in clients registered in
+    /// memory (with a `web-ui` credential when enabled), and **no** config
+    /// root — so nothing a test does can reach a developer's real secrets.
+    /// Tests that need persistence point at a temp dir via
+    /// [`set_config_root`](Self::set_config_root).
+    #[cfg(test)]
+    pub fn for_tests(mode: AuthMode) -> Self {
+        let mut registry = ClientRegistry::default();
+        registry.ensure_builtins(clients::now());
+        let web_ui_credential = mode.key().and_then(|key| {
+            registry
+                .find_by_name(clients::WEB_UI)
+                .map(|c| crate::auth::issue_credential(c, key, c.issued_at))
+        });
+        Self::new(ResolvedAuth {
+            mode,
+            registry,
+            web_ui_credential,
+            config_root: None,
+            warnings: vec![],
+        })
+    }
+
+    #[cfg(test)]
+    pub fn set_config_root(&self, root: Option<PathBuf>) {
+        if let Ok(mut g) = self.config_root.write() {
+            *g = root;
+        }
+    }
+
+    /// `Ok(None)` when nothing is persisted (ephemeral key, tests). A poisoned
+    /// lock is an error rather than a silent "nothing to persist", so a
+    /// mutation can never report success without having been saved.
+    fn config_root(&self) -> Result<Option<PathBuf>, String> {
+        self.config_root
+            .read()
+            .map(|g| g.clone())
+            .map_err(|_| "config root lock poisoned".to_string())
+    }
+
     /// Clone of the live auth mode, for building `SettingsResponse`.
-    pub fn api_auth_snapshot(&self) -> ApiAuth {
-        self.api_auth
+    pub fn auth_snapshot(&self) -> AuthMode {
+        self.auth
             .read()
             .map(|g| g.clone())
             .unwrap_or_else(|poisoned| poisoned.into_inner().clone())
     }
 
-    /// Test constructor: like [`new`](Self::new) but with **no** token-file path,
-    /// so nothing a test does — Regenerate, or the on-mismatch re-read in the
-    /// auth middleware — can ever touch the developer's real `api-token`.
-    /// Tests that need a file point at a temp path via
-    /// [`set_api_token_path`](Self::set_api_token_path).
-    #[cfg(test)]
-    pub fn for_tests(api_auth: ApiAuth) -> Self {
-        let state = Self::new(api_auth);
-        state.set_api_token_path(None);
-        state
+    /// The accepted clients (never their credentials).
+    pub fn clients_snapshot(&self) -> Vec<Client> {
+        self.clients
+            .read()
+            .map(|g| g.clients.clone())
+            .unwrap_or_else(|poisoned| poisoned.into_inner().clients.clone())
     }
 
-    /// Point the token-file logic at a different path (tests only).
-    #[cfg(test)]
-    pub fn set_api_token_path(&self, path: Option<PathBuf>) {
-        if let Ok(mut g) = self.api_token_path.write() {
-            *g = path;
-        }
+    pub fn web_ui_credential(&self) -> Option<String> {
+        self.web_ui_credential.read().ok().and_then(|g| g.clone())
     }
 
-    fn api_token_path(&self) -> Option<PathBuf> {
-        self.api_token_path.read().ok().and_then(|g| g.clone())
+    fn signing_key(&self) -> Result<Vec<u8>, String> {
+        self.auth
+            .read()
+            .map_err(|e| e.to_string())?
+            .key()
+            .map(<[u8]>::to_vec)
+            .ok_or_else(|| {
+                "API client verification is disabled (CCTRACE_API_AUTH=off); there are no \
+                 client credentials to manage"
+                    .to_string()
+            })
     }
 
-    /// Rotate the token file and swap the live token (Settings → Regenerate).
-    pub fn regenerate_api_token(&self) -> Result<String, String> {
-        self.regenerate_api_token_at(self.api_token_path().as_deref())
-    }
-
-    /// If the live token came from the file and the file now holds a different
-    /// token (another cctrace process regenerated it, or the user edited it),
-    /// adopt the file's token. Returns whether the live token changed. Called
-    /// by the auth middleware only after a mismatch, so the happy path never
-    /// reads the disk.
-    pub fn refresh_api_token_from_file(&self) -> bool {
-        let Some(path) = self.api_token_path() else {
+    /// Replace the in-memory registry with the on-disk one when they differ.
+    /// Must be called with the `clients` write guard held, so the compare and
+    /// the swap cannot interleave with a mutation (otherwise a concurrent
+    /// revoke could be undone by a refresh that loaded the file a moment
+    /// before it was saved). Also re-reads the `web-ui` credential file, which
+    /// follows the registry. Returns whether anything changed.
+    fn adopt_from_disk_locked(&self, guard: &mut ClientRegistry, root: &Path) -> bool {
+        let Some(on_disk) = load_adoptable_registry(root) else {
             return false;
         };
-        let live = match self.api_auth.read() {
-            Ok(g) => match &*g {
-                ApiAuth::File(t) => t.clone(),
-                _ => return false,
-            },
-            Err(_) => return false,
-        };
-        let Some(on_disk) = crate::auth::read_token_file(&path) else {
-            return false;
-        };
-        if on_disk == live {
+        if *guard == on_disk {
             return false;
         }
-        let Ok(mut g) = self.api_auth.write() else {
-            return false;
-        };
-        // Re-check under the write lock: a concurrent request may have swapped
-        // it already, in which case there is nothing left to do.
-        match &*g {
-            ApiAuth::File(t) if *t == live => {
-                *g = ApiAuth::File(on_disk);
-                true
+        *guard = on_disk;
+        let web_ui =
+            crate::auth::read_trimmed(&crate::auth::builtin_credential_path(root, clients::WEB_UI));
+        if let Ok(mut g) = self.web_ui_credential.write() {
+            *g = web_ui;
+        }
+        true
+    }
+
+    /// Apply `mutate` to the registry and persist the result before it becomes
+    /// visible. Under the write lock the on-disk registry is adopted first, so
+    /// a change made by another cctrace process sharing the config dir (a
+    /// revoke, say) is not overwritten by this one's stale copy. If the save
+    /// fails, memory is left exactly as it was.
+    fn mutate_registry<T>(
+        &self,
+        mutate: impl FnOnce(&mut ClientRegistry) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let root = self.config_root()?;
+        let mut guard = self.clients.write().map_err(|e| e.to_string())?;
+        if let Some(root) = &root {
+            self.adopt_from_disk_locked(&mut guard, root);
+        }
+        let mut next = guard.clone();
+        let out = mutate(&mut next)?;
+        if let Some(root) = &root {
+            next.save(&crate::auth::registry_path(root))?;
+        }
+        *guard = next;
+        Ok(out)
+    }
+
+    /// Keep a built-in client's credential file (and the live `web-ui` cookie
+    /// value) in step with a reissue or revocation.
+    fn sync_builtin_credential(&self, client: &Client, credential: Option<&str>) {
+        if !client.builtin {
+            return;
+        }
+        if let Ok(Some(root)) = self.config_root() {
+            let path = crate::auth::builtin_credential_path(&root, &client.name);
+            match credential {
+                Some(c) => {
+                    if let Err(e) =
+                        crate::auth::write_private_atomic(&path, format!("{c}\n").as_bytes())
+                    {
+                        eprintln!(
+                            "HTTP API: WARNING — could not write {}: {e}",
+                            path.display()
+                        );
+                    }
+                }
+                None => {
+                    let _ = std::fs::remove_file(&path);
+                }
             }
-            _ => false,
+        }
+        if client.name == clients::WEB_UI {
+            if let Ok(mut g) = self.web_ui_credential.write() {
+                *g = credential.map(str::to_owned);
+            }
         }
     }
 
-    /// Testable core of [`regenerate_api_token`](Self::regenerate_api_token):
-    /// only a file-sourced token can be rotated; env-provided and disabled
-    /// modes are rejected with a message the Settings UI can show.
-    pub fn regenerate_api_token_at(&self, path: Option<&Path>) -> Result<String, String> {
-        let mut guard = self.api_auth.write().map_err(|e| e.to_string())?;
-        match &*guard {
-            ApiAuth::Disabled => Err(
-                "API client verification is disabled (CCTRACE_API_AUTH=off); there is no \
-                 token to regenerate"
-                    .to_string(),
-            ),
-            ApiAuth::Env(_) => Err(
-                "the API token is set by CCTRACE_API_TOKEN; unset it to manage the token from \
-                 Settings"
-                    .to_string(),
-            ),
-            ApiAuth::Ephemeral(_) => Err(
-                "the API token could not be persisted at startup (see the server log), so it \
-                 cannot be regenerated; fix the config directory and restart"
-                    .to_string(),
-            ),
-            ApiAuth::File(_) => {
-                let path = path.ok_or("no config directory available for the api-token file")?;
-                let token = crate::auth::rotate_token_file(path)?;
-                *guard = ApiAuth::File(token.clone());
-                Ok(token)
-            }
+    /// Register a new client and mint its credential (returned once).
+    pub fn register_client(&self, name: &str) -> Result<(Client, String), String> {
+        let key = self.signing_key()?;
+        let client = self.mutate_registry(|r| r.register(name, clients::now()))?;
+        let credential = crate::auth::issue_credential(&client, &key, client.issued_at);
+        Ok((client, credential))
+    }
+
+    /// Reissue: mint a new credential and invalidate every older one.
+    pub fn reissue_client(&self, id: uuid::Uuid) -> Result<(Client, String), String> {
+        let key = self.signing_key()?;
+        let client = self.mutate_registry(|r| r.reissue(id, clients::now()))?;
+        let credential = crate::auth::issue_credential(&client, &key, client.issued_at);
+        self.sync_builtin_credential(&client, Some(&credential));
+        Ok((client, credential))
+    }
+
+    /// Revoke: every credential of this client stops working immediately.
+    pub fn revoke_client(&self, id: uuid::Uuid) -> Result<Client, String> {
+        self.signing_key()?;
+        let client = self.mutate_registry(|r| r.revoke(id, clients::now()))?;
+        self.sync_builtin_credential(&client, None);
+        Ok(client)
+    }
+
+    fn check_registry(&self, id: uuid::Uuid, iat: i64) -> Option<ClientIdentity> {
+        let registry = self.clients.read().ok()?;
+        let client = registry.find(id)?;
+        if client.is_revoked() || iat < client.issued_at {
+            return None;
         }
+        Some(ClientIdentity {
+            id,
+            name: client.name.clone(),
+        })
+    }
+
+    /// Map verified claims to a live client. On a miss, re-read the registry
+    /// from disk once — another cctrace process sharing the config dir may
+    /// have registered or reissued this client — and retry. Called by the auth
+    /// middleware, so the happy path never touches the disk.
+    pub fn authenticate(&self, claims: &Claims) -> Option<ClientIdentity> {
+        let id = uuid::Uuid::parse_str(&claims.sub).ok()?;
+        if let Some(identity) = self.check_registry(id, claims.iat) {
+            return Some(identity);
+        }
+        if self.refresh_clients_from_disk() {
+            return self.check_registry(id, claims.iat);
+        }
+        None
+    }
+
+    /// Adopt the on-disk registry (and the `web-ui` credential file) when they
+    /// differ from memory. Returns whether anything changed. No-op without a
+    /// config root, and never adopts a missing, unparsable or built-in-less
+    /// file (see [`load_adoptable_registry`]).
+    pub fn refresh_clients_from_disk(&self) -> bool {
+        let Ok(Some(root)) = self.config_root() else {
+            return false;
+        };
+        let Ok(mut guard) = self.clients.write() else {
+            return false;
+        };
+        self.adopt_from_disk_locked(&mut guard, &root)
     }
 
     /// Load a windowed slice of a session, caching the lightened build for the
@@ -468,7 +604,7 @@ mod tests {
     fn load_session_windowed_returns_window_with_total_count() {
         let dir = tempfile::tempdir().unwrap();
         let path = write_session(dir.path());
-        let state = AppState::for_tests(ApiAuth::Disabled);
+        let state = AppState::for_tests(AuthMode::Disabled);
 
         let full = state
             .load_session_windowed(&path, LoadOptions::full())
@@ -495,7 +631,7 @@ mod tests {
     fn light_cache_serves_repeated_windows_and_clears() {
         let dir = tempfile::tempdir().unwrap();
         let path = write_session(dir.path());
-        let state = AppState::for_tests(ApiAuth::Disabled);
+        let state = AppState::for_tests(AuthMode::Disabled);
 
         // First call builds and caches; second (same path+size) hits the cache
         // and must return identical content.
@@ -524,7 +660,7 @@ mod tests {
     fn full_message_at_works_without_a_warm_light_cache() {
         let dir = tempfile::tempdir().unwrap();
         let path = write_session(dir.path());
-        let state = AppState::for_tests(ApiAuth::Disabled);
+        let state = AppState::for_tests(AuthMode::Disabled);
 
         // No list load has happened yet — full_message_at must not depend on
         // the light cache being populated first.
@@ -538,7 +674,7 @@ mod tests {
     fn full_message_at_never_populates_the_light_cache() {
         let dir = tempfile::tempdir().unwrap();
         let path = write_session(dir.path());
-        let state = AppState::for_tests(ApiAuth::Disabled);
+        let state = AppState::for_tests(AuthMode::Disabled);
 
         state.full_message_at(&path, 0).unwrap();
         state.full_message_at(&path, 1).unwrap();
@@ -551,104 +687,233 @@ mod tests {
     fn full_message_at_out_of_range_returns_none() {
         let dir = tempfile::tempdir().unwrap();
         let path = write_session(dir.path());
-        let state = AppState::for_tests(ApiAuth::Disabled);
+        let state = AppState::for_tests(AuthMode::Disabled);
 
         assert!(state.full_message_at(&path, 9999).unwrap().is_none());
     }
 
-    // -- api token regeneration ---------------------------------------------
+    // -- clients & credentials ---------------------------------------------
 
-    #[test]
-    fn regenerate_rotates_file_token_and_swaps_live_value() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("api-token");
-        std::fs::write(&path, "old-token\n").unwrap();
-        let state = AppState::for_tests(ApiAuth::File("old-token".into()));
+    const KEY: &[u8] = b"0123456789abcdef0123456789abcdef";
 
-        let new_token = state.regenerate_api_token_at(Some(&path)).unwrap();
-        assert_ne!(new_token, "old-token");
-        assert_eq!(state.api_auth_snapshot(), ApiAuth::File(new_token.clone()));
-        assert_eq!(std::fs::read_to_string(&path).unwrap().trim(), new_token);
+    fn enabled() -> AppState {
+        AppState::for_tests(AuthMode::Enabled {
+            key: KEY.to_vec(),
+            source: crate::auth::KeySource::Ephemeral,
+        })
+    }
+
+    fn claims_of(credential: &str) -> Claims {
+        crate::jwt::verify(credential, KEY).unwrap()
     }
 
     #[test]
-    fn regenerate_is_rejected_for_env_token() {
-        let state = AppState::for_tests(ApiAuth::Env("fixed".into()));
-        let err = state.regenerate_api_token_at(None).unwrap_err();
-        assert!(err.contains("CCTRACE_API_TOKEN"), "{err}");
-        assert_eq!(state.api_auth_snapshot(), ApiAuth::Env("fixed".into()));
-    }
-
-    #[test]
-    fn regenerate_is_rejected_when_disabled() {
-        let state = AppState::for_tests(ApiAuth::Disabled);
-        let err = state.regenerate_api_token_at(None).unwrap_err();
-        assert!(err.contains("disabled"), "{err}");
-    }
-
-    #[test]
-    fn regenerate_is_rejected_for_ephemeral_token() {
-        let state = AppState::for_tests(ApiAuth::Ephemeral("oneoff".into()));
-        let err = state.regenerate_api_token_at(None).unwrap_err();
-        assert!(err.contains("could not be persisted"), "{err}");
+    fn for_tests_registers_builtins_in_memory_with_a_web_ui_credential() {
+        let state = enabled();
+        let names: Vec<_> = state
+            .clients_snapshot()
+            .into_iter()
+            .map(|c| c.name)
+            .collect();
+        assert_eq!(names, vec!["web-ui", "tui"]);
+        let cred = state.web_ui_credential().expect("web-ui credential");
         assert_eq!(
-            state.api_auth_snapshot(),
-            ApiAuth::Ephemeral("oneoff".into())
+            state.authenticate(&claims_of(&cred)).unwrap().name,
+            "web-ui"
+        );
+        assert!(
+            !state.refresh_clients_from_disk(),
+            "no config root → no disk"
+        );
+        assert!(AppState::for_tests(AuthMode::Disabled)
+            .web_ui_credential()
+            .is_none());
+    }
+
+    #[test]
+    fn register_then_authenticate_revoke_and_reissue() {
+        let state = enabled();
+        let (client, cred) = state.register_client("ci-script").unwrap();
+        assert_eq!(
+            state.authenticate(&claims_of(&cred)),
+            Some(ClientIdentity {
+                id: client.id,
+                name: "ci-script".into()
+            })
+        );
+
+        let revoked = state.revoke_client(client.id).unwrap();
+        assert!(revoked.is_revoked());
+        assert_eq!(state.authenticate(&claims_of(&cred)), None);
+
+        let (reissued, new_cred) = state.reissue_client(client.id).unwrap();
+        assert!(!reissued.is_revoked());
+        assert_eq!(state.authenticate(&claims_of(&cred)), None, "old is dead");
+        assert!(state.authenticate(&claims_of(&new_cred)).is_some());
+    }
+
+    #[test]
+    fn unknown_or_foreign_claims_are_rejected() {
+        let state = enabled();
+        let unknown = Claims {
+            sub: uuid::Uuid::new_v4().to_string(),
+            name: "ghost".into(),
+            iat: clients::now(),
+        };
+        assert_eq!(state.authenticate(&unknown), None);
+        let garbage = Claims {
+            sub: "not-a-uuid".into(),
+            name: "x".into(),
+            iat: 0,
+        };
+        assert_eq!(state.authenticate(&garbage), None);
+    }
+
+    #[test]
+    fn reissuing_web_ui_swaps_the_cookie_credential_and_revoking_clears_it() {
+        let state = enabled();
+        let before = state.web_ui_credential().unwrap();
+        let web_ui = state
+            .clients_snapshot()
+            .into_iter()
+            .find(|c| c.name == "web-ui")
+            .unwrap();
+        let (_, after) = state.reissue_client(web_ui.id).unwrap();
+        assert_ne!(before, after);
+        assert_eq!(state.web_ui_credential().as_deref(), Some(after.as_str()));
+        state.revoke_client(web_ui.id).unwrap();
+        assert!(state.web_ui_credential().is_none());
+    }
+
+    #[test]
+    fn disabled_mode_cannot_manage_clients() {
+        let state = AppState::for_tests(AuthMode::Disabled);
+        assert!(state.register_client("a").unwrap_err().contains("disabled"));
+        let id = state.clients_snapshot()[0].id;
+        assert!(state.reissue_client(id).is_err());
+        assert!(state.revoke_client(id).is_err());
+    }
+
+    #[test]
+    fn registry_and_builtin_credential_files_are_persisted_under_the_config_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = enabled();
+        state.set_config_root(Some(dir.path().to_path_buf()));
+
+        let (client, _) = state.register_client("persisted").unwrap();
+        let on_disk = ClientRegistry::load(&crate::auth::registry_path(dir.path())).unwrap();
+        assert!(on_disk.find(client.id).is_some());
+
+        let tui = state
+            .clients_snapshot()
+            .into_iter()
+            .find(|c| c.name == "tui")
+            .unwrap();
+        let (_, cred) = state.reissue_client(tui.id).unwrap();
+        let path = crate::auth::builtin_credential_path(dir.path(), "tui");
+        assert_eq!(std::fs::read_to_string(&path).unwrap().trim(), cred);
+        state.revoke_client(tui.id).unwrap();
+        assert!(
+            !path.exists(),
+            "revoked built-in credential file is removed"
         );
     }
 
     #[test]
-    fn refresh_adopts_a_rotated_file_token() {
+    fn refresh_adopts_a_registry_written_by_another_process() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("api-token");
-        std::fs::write(&path, "rotated-elsewhere\n").unwrap();
-        let state = AppState::for_tests(ApiAuth::File("stale".into()));
-        state.set_api_token_path(Some(path));
+        let state = enabled();
+        state.set_config_root(Some(dir.path().to_path_buf()));
+        // Persist what we have, then let "another process" add a client.
+        state.register_client("mine").unwrap();
+        let mut other = ClientRegistry::load(&crate::auth::registry_path(dir.path())).unwrap();
+        let theirs = other.register("theirs", clients::now()).unwrap();
+        other.save(&crate::auth::registry_path(dir.path())).unwrap();
+        let cred = crate::auth::issue_credential(&theirs, KEY, theirs.issued_at);
 
-        assert!(state.refresh_api_token_from_file());
+        // Unknown in memory → the middleware path re-reads the disk and accepts.
         assert_eq!(
-            state.api_auth_snapshot(),
-            ApiAuth::File("rotated-elsewhere".into())
+            state.authenticate(&claims_of(&cred)).map(|i| i.name),
+            Some("theirs".to_string())
         );
-        // Nothing changed on disk since → no-op.
-        assert!(!state.refresh_api_token_from_file());
+        assert!(!state.refresh_clients_from_disk(), "already in sync");
     }
 
     #[test]
-    fn refresh_ignores_missing_or_empty_file_and_non_file_sources() {
+    fn refresh_never_adopts_a_missing_empty_or_builtin_less_registry() {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::for_tests(AuthMode::Enabled {
+            key: b"0123456789abcdef0123456789abcdef".to_vec(),
+            source: crate::auth::KeySource::Ephemeral,
+        });
+        state.set_config_root(Some(root.path().to_path_buf()));
+        let before = state.clients_snapshot();
+        let path = crate::auth::registry_path(root.path());
+
+        assert!(!state.refresh_clients_from_disk(), "no file");
+        std::fs::write(&path, "{}").unwrap();
+        assert!(!state.refresh_clients_from_disk(), "empty registry");
+        std::fs::write(&path, "{ not json").unwrap();
+        assert!(!state.refresh_clients_from_disk(), "corrupt registry");
+        let mut only_foo = ClientRegistry::default();
+        only_foo.register("foo", 1).unwrap();
+        only_foo.save(&path).unwrap();
+        assert!(!state.refresh_clients_from_disk(), "built-ins missing");
+        assert_eq!(state.clients_snapshot(), before, "memory untouched");
+
+        // A complete registry from another process is adopted.
+        let mut full = ClientRegistry {
+            clients: before.clone(),
+        };
+        full.register("foo", 2).unwrap();
+        full.save(&path).unwrap();
+        assert!(state.refresh_clients_from_disk());
+        assert!(state.clients_snapshot().iter().any(|c| c.name == "foo"));
+    }
+
+    #[test]
+    fn mutations_adopt_another_processes_changes_instead_of_overwriting_them() {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState::for_tests(AuthMode::Enabled {
+            key: b"0123456789abcdef0123456789abcdef".to_vec(),
+            source: crate::auth::KeySource::Ephemeral,
+        });
+        state.set_config_root(Some(root.path().to_path_buf()));
+        let path = crate::auth::registry_path(root.path());
+
+        // Another process revokes tui and registers "x" on disk while this
+        // one's memory still says tui is active.
+        let mut other = ClientRegistry {
+            clients: state.clients_snapshot(),
+        };
+        let tui_id = other.find_by_name(clients::TUI).unwrap().id;
+        other.revoke(tui_id, 5).unwrap();
+        other.register("x", 6).unwrap();
+        other.save(&path).unwrap();
+
+        // This process registers "y": the disk state is adopted first, so the
+        // save keeps tui revoked and x present rather than resurrecting tui.
+        state.register_client("y").unwrap();
+        let on_disk = ClientRegistry::load(&path).unwrap();
+        assert!(on_disk.find_by_name(clients::TUI).unwrap().is_revoked());
+        assert!(on_disk.find_by_name("x").is_some());
+        assert!(on_disk.find_by_name("y").is_some());
+        assert_eq!(state.clients_snapshot(), on_disk.clients);
+    }
+
+    #[test]
+    fn failed_save_leaves_memory_untouched() {
         let dir = tempfile::tempdir().unwrap();
-        let missing = dir.path().join("missing");
-        let state = AppState::for_tests(ApiAuth::File("live".into()));
-        state.set_api_token_path(Some(missing.clone()));
-        assert!(!state.refresh_api_token_from_file());
-
-        std::fs::write(&missing, "\n").unwrap();
-        assert!(!state.refresh_api_token_from_file());
-        assert_eq!(state.api_auth_snapshot(), ApiAuth::File("live".into()));
-
-        let env_state = AppState::for_tests(ApiAuth::Env("fixed".into()));
-        let env_path = dir.path().join("env-token");
-        std::fs::write(&env_path, "other\n").unwrap();
-        env_state.set_api_token_path(Some(env_path));
-        assert!(!env_state.refresh_api_token_from_file());
-        assert_eq!(env_state.api_auth_snapshot(), ApiAuth::Env("fixed".into()));
-    }
-
-    #[test]
-    fn for_tests_has_no_token_path_so_it_cannot_reach_a_real_file() {
-        let state = AppState::for_tests(ApiAuth::File("live".into()));
-        assert_eq!(state.api_token_path(), None);
-        // With no path, neither the re-read nor Regenerate can do any file I/O.
-        assert!(!state.refresh_api_token_from_file());
-        assert!(state.regenerate_api_token().is_err());
-        assert_eq!(state.api_auth_snapshot(), ApiAuth::File("live".into()));
-    }
-
-    #[test]
-    fn regenerate_without_config_dir_is_an_error() {
-        let state = AppState::for_tests(ApiAuth::File("t".into()));
-        assert!(state.regenerate_api_token_at(None).is_err());
-        // The live token is untouched when rotation fails.
-        assert_eq!(state.api_auth_snapshot(), ApiAuth::File("t".into()));
+        // A config "root" that is a regular file: clients.json cannot be written.
+        let bogus_root = dir.path().join("not-a-dir");
+        std::fs::write(&bogus_root, "x").unwrap();
+        let state = AppState::for_tests(AuthMode::Enabled {
+            key: b"0123456789abcdef0123456789abcdef".to_vec(),
+            source: crate::auth::KeySource::Ephemeral,
+        });
+        state.set_config_root(Some(bogus_root));
+        let before = state.clients_snapshot();
+        assert!(state.register_client("z").is_err());
+        assert_eq!(state.clients_snapshot(), before);
     }
 }

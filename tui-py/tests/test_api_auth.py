@@ -1,4 +1,4 @@
-"""Tests for api._get/_post attaching the API token and surfacing 401s."""
+"""Tests for api._get/_post attaching the client credential and surfacing 401s."""
 
 from __future__ import annotations
 
@@ -58,11 +58,11 @@ def fake_client(monkeypatch):
     FakeClient.status = 200
     FakeClient.payload = ["/proj"]
     monkeypatch.setattr(api.httpx, "AsyncClient", FakeClient)
-    monkeypatch.setattr(auth, "resolve_api_token", lambda: "tok")
+    monkeypatch.setattr(auth, "resolve_credential", lambda: "tok")
     return FakeClient
 
 
-async def test_get_sends_token_header():
+async def test_get_sends_credential_header():
     assert await api.get_project_dirs() == ["/proj"]
     method, url, headers = FakeClient.calls[0]
     assert method == "GET"
@@ -70,7 +70,7 @@ async def test_get_sends_token_header():
     assert headers == {"X-CCTrace-Token": "tok"}
 
 
-async def test_post_sends_token_header_and_body():
+async def test_post_sends_credential_header_and_body():
     FakeClient.payload = None
     await api.watch_session("/s.jsonl")
     method, url, headers, body = FakeClient.calls[0]
@@ -80,20 +80,38 @@ async def test_post_sends_token_header_and_body():
     assert body == {"path": "/s.jsonl"}
 
 
-async def test_no_header_when_token_unavailable(monkeypatch):
-    monkeypatch.setattr(auth, "resolve_api_token", lambda: None)
+async def test_no_header_when_credential_unavailable(monkeypatch):
+    monkeypatch.setattr(auth, "resolve_credential", lambda: None)
     await api.get_project_dirs()
     assert FakeClient.calls[0][2] == {}
 
 
-async def test_401_raises_api_auth_error_naming_the_token_source():
+async def test_401_with_a_credential_names_the_file_and_the_backend_error():
     FakeClient.status = 401
+    FakeClient.payload = {"error": "invalid or revoked client credential"}
     with pytest.raises(api.ApiAuthError) as info:
         await api.get_project_dirs()
-    assert "api-token" in str(info.value)
-    assert "CCTRACE_API_TOKEN" in str(info.value)
+    msg = str(info.value).replace("\\", "/")
+    assert "rejected the TUI's client credential" in msg
+    assert "clients/tui.jwt" in msg
+    assert "Accepted clients" in msg
+    assert "Backend said: invalid or revoked client credential" in msg
+    assert "CCTRACE_API_TOKEN" not in msg
     # Still an httpx.HTTPStatusError, so existing broad handlers keep working.
     assert isinstance(info.value, httpx.HTTPStatusError)
+
+
+async def test_401_without_a_credential_blames_the_missing_file_not_the_backend(monkeypatch):
+    monkeypatch.setattr(auth, "resolve_credential", lambda: None)
+    FakeClient.status = 401
+    FakeClient.payload = None
+    with pytest.raises(api.ApiAuthError) as info:
+        await api.get_project_dirs()
+    msg = str(info.value).replace("\\", "/")
+    assert "sent no client credential" in msg
+    assert "clients/tui.jwt" in msg
+    assert "CCTRACE_API_AUTH" in msg
+    assert "Backend said" not in msg
 
 
 async def test_other_errors_are_plain_http_status_errors():

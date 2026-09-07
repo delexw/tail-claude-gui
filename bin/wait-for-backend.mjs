@@ -2,7 +2,7 @@
 /** Wait until the backend HTTP API is reachable (port 11423).
  *
  * Any HTTP response counts as "ready" — including the 401 the backend returns
- * because this probe sends no API token. Only a connection failure keeps us
+ * because this probe sends no client credential. Only a connection failure keeps us
  * waiting; `fetch` rejects on those and resolves on any status code. */
 const url = "http://127.0.0.1:11423/api/settings";
 const timeout = 120_000;

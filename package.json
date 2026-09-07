@@ -19,7 +19,7 @@
     "test": "vitest run && cargo test --manifest-path src-tauri/Cargo.toml",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "check": "tsc --noEmit && oxlint && oxfmt --check && cargo clippy --manifest-path src-tauri/Cargo.toml && cargo fmt --manifest-path src-tauri/Cargo.toml --check && vitest run && cargo test --manifest-path src-tauri/Cargo.toml"
+    "check": "tsc --noEmit && tsc -p tsconfig.node.json --noEmit && oxlint && oxfmt --check && cargo clippy --manifest-path src-tauri/Cargo.toml && cargo fmt --manifest-path src-tauri/Cargo.toml --check && vitest run && cargo test --manifest-path src-tauri/Cargo.toml"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

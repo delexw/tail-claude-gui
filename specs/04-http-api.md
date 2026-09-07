@@ -14,7 +14,7 @@ functionality as the Tauri desktop frontend. The server runs on port **11423** b
 graph TB
     subgraph Rust["Rust Backend (Axum)"]
         ROUTER["Axum Router\n/api/*"]
-        MW["Middleware\nAPI token check (accepted clients only)\nCORS (allowlisted origins)\nJSON responses"]
+        MW["Middleware\nclient credential check (accepted clients only)\nCORS (allowlisted origins)\nJSON responses"]
         STATE["Arc&lt;AppState&gt;"]
     end
 
@@ -32,7 +32,7 @@ graph TB
         GET_GIT["GET /api/git-info"]
         GET_DEBUG["GET /api/debug-log"]
         GET_SETTINGS_W["POST /api/settings/set"]
-        POST_TOKEN["POST /api/settings/token/regenerate"]
+        CLIENTS["GET|POST /api/clients\nPOST /api/clients/{id}/reissue|revoke\nGET /api/whoami"]
         GET_SSE["GET /api/events\n(SSE stream)"]
         STATIC["GET /*\n(optional static assets)"]
     end
@@ -51,7 +51,7 @@ graph TB
     ROUTER --> GET_GIT
     ROUTER --> GET_DEBUG
     ROUTER --> GET_SETTINGS_W
-    ROUTER --> POST_TOKEN
+    ROUTER --> CLIENTS
     ROUTER --> GET_SSE
     ROUTER --> STATIC
 ```
@@ -62,7 +62,7 @@ graph TB
 
 ### `GET /api/settings`
 
-Returns current settings, the platform default projects directory, and the API client token
+Returns current settings, the platform default projects directory, and the client verification
 state (see [Authentication](#authentication)).
 
 **Response**
@@ -72,14 +72,38 @@ state (see [Authentication](#authentication)).
   "projects_dir": "/Users/you/.claude/projects",
   "default_dir": "/Users/you/.claude/projects",
   "api_auth_enabled": true,
-  "api_token_source": "file",
-  "api_token": "3f9a…(64 hex chars)"
+  "api_auth_source": "file",
+  "clients": [
+    {
+      "id": "6f1d…",
+      "name": "web-ui",
+      "builtin": true,
+      "created_at": 1757100000,
+      "issued_at": 1757100000
+    },
+    {
+      "id": "a2c4…",
+      "name": "tui",
+      "builtin": true,
+      "created_at": 1757100000,
+      "issued_at": 1757100000
+    },
+    {
+      "id": "9b7e…",
+      "name": "ci-script",
+      "builtin": false,
+      "created_at": 1757103600,
+      "issued_at": 1757103600,
+      "revoked_at": 1757110000
+    }
+  ]
 }
 ```
 
-`api_token_source` is `"file"` (rotatable from Settings), `"env"` (`CCTRACE_API_TOKEN`, read-only),
-`"ephemeral"` (the token file was unusable at startup; one-off, read-only) or `"disabled"`
-(`CCTRACE_API_AUTH=off`, `api_token` is `null`).
+`api_auth_source` is `"file"` (signing key persisted in `api-secret`), `"ephemeral"` (the config dir
+was unusable at startup, so the key lives in memory and every credential dies with the process) or
+`"disabled"` (`CCTRACE_API_AUTH=off`). `clients` lists the registered clients — never their
+credentials.
 
 ---
 
@@ -239,7 +263,14 @@ Returns incremental debug log entries.
 
 ```json
 {
-  "entries": [{ "timestamp": "...", "level": "Warn", "category": "hook", "message": "..." }]
+  "entries": [
+    {
+      "timestamp": "...",
+      "level": "Warn",
+      "category": "hook",
+      "message": "..."
+    }
+  ]
 }
 ```
 
@@ -254,17 +285,37 @@ Updates the projects directory setting.
 
 ---
 
-### `POST /api/settings/token/regenerate`
+### `GET /api/clients`
 
-Rotates the shared API client token (see [Authentication](#authentication)): writes a fresh
-64-hex token to the token file, swaps the live value the middleware checks, and returns the
-same `SettingsResponse` as `GET /api/settings` with the new `api_token`. The response also
-carries a `Set-Cookie: cctrace_token=<new>` so a same-origin (Docker) browser tab keeps
-working without a reload.
+The accepted clients, as in `GET /api/settings`'s `clients` (see
+[Authentication](#authentication)). Credentials are never returned.
 
-Like every `/api/*` route it requires the _current_ token, so only an already-accepted client
-can rotate it. Returns `400 {"error": ...}` when the token is not rotatable: it came from
-`CCTRACE_API_TOKEN` (env tokens are read-only) or verification is disabled.
+### `POST /api/clients`
+
+**Request**: `{ "name": "ci-script" }` — trimmed, 1–64 characters, unique (case-insensitively).
+
+**Response**: `{ "client": { ...Client }, "credential": "eyJ…" }`. The credential is returned
+**exactly once**; the backend does not store it. `400 {"error": ...}` for an invalid or duplicate
+name, or when verification is disabled.
+
+### `POST /api/clients/{id}/reissue`
+
+Mints a new credential for the client and bumps its `issued_at`, so every credential minted earlier
+stops working; also un-revokes it. Response as for `POST /api/clients`. For the built-in clients the
+backend rewrites `clients/<name>.jwt` so the TUI and the Vite dev server follow; when the client is
+`web-ui` the response also carries `Set-Cookie: cctrace_token=<new>` so a same-origin (Docker) tab
+keeps working without a reload.
+
+### `POST /api/clients/{id}/revoke`
+
+Marks the client revoked: every credential it holds is rejected immediately. Idempotent. Response:
+the updated `Client`. Revoking a built-in client also deletes its `clients/<name>.jwt`.
+
+### `GET /api/whoami`
+
+`{ "auth_enabled": true, "client": { "id": "…", "name": "tui" } }` — the identity the middleware
+attached to this request. With `CCTRACE_API_AUTH=off`, `auth_enabled` is `false` and `client` is
+`null`.
 
 ### `GET /api/events` — SSE Stream
 
@@ -326,15 +377,14 @@ the way the web frontend does.
 
 ## Configuration
 
-| Env var                   | Default                  | Description                                                                                                                           |
-| ------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `CCTRACE_HTTP_HOST`       | `127.0.0.1`              | Bind address                                                                                                                          |
-| `CCTRACE_HTTP_PORT`       | `11423` (Docker: `1421`) | Listen port                                                                                                                           |
-| `CCTRACE_STATIC_DIR`      | (unset)                  | Directory to serve as static files at `/`                                                                                             |
-| `CCTRACE_ALLOWED_ORIGINS` | (unset)                  | Extra CORS origins, comma-separated (see CORS Policy below)                                                                           |
-| `CCTRACE_API_TOKEN`       | (unset)                  | Fixed API client token; overrides the token file (see Authentication)                                                                 |
-| `CCTRACE_API_AUTH`        | (unset)                  | `off` disables the API token check entirely (loud stderr warning)                                                                     |
-| `CCTRACE_CONFIG_DIR`      | (unset)                  | Relocates the config dir holding `settings.json` and `api-token` (default `<OS config dir>/claude-code-trace`; used by the e2e suite) |
+| Env var                   | Default                  | Description                                                                                                                                                        |
+| ------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `CCTRACE_HTTP_HOST`       | `127.0.0.1`              | Bind address                                                                                                                                                       |
+| `CCTRACE_HTTP_PORT`       | `11423` (Docker: `1421`) | Listen port                                                                                                                                                        |
+| `CCTRACE_STATIC_DIR`      | (unset)                  | Directory to serve as static files at `/`                                                                                                                          |
+| `CCTRACE_ALLOWED_ORIGINS` | (unset)                  | Extra CORS origins, comma-separated (see CORS Policy below)                                                                                                        |
+| `CCTRACE_API_AUTH`        | (unset)                  | `off` disables client verification entirely (loud stderr warning)                                                                                                  |
+| `CCTRACE_CONFIG_DIR`      | (unset)                  | Relocates the config dir holding `settings.json`, `api-secret`, `clients.json` and `clients/` (default `<OS config dir>/claude-code-trace`; used by the e2e suite) |
 
 The default port for native binaries is `11423` (defined in `http_api.rs:38` as
 `DEFAULT_HTTP_PORT`). The Docker image overrides this to `1421` via `CCTRACE_HTTP_PORT=1421` so
@@ -383,96 +433,153 @@ flowchart LR
 
 ## Authentication
 
-**Location**: `src-tauri/src/auth.rs`
+**Location**: `src-tauri/src/auth.rs` (middleware, key, cookie), `src-tauri/src/clients.rs`
+(registry), `src-tauri/src/jwt.rs` (HS256), `src-tauri/src/commands/clients.rs` (management).
 
-Every `/api/*` route is gated by a shared secret token so that only _accepted clients_ — the
-bundled web UI, the Python TUI, and any tool the user has handed the token to — can reach the
-backend. Without it, any local process (or, when Docker binds `0.0.0.0`, any LAN host) could read
-session transcripts, rewrite `settings.json`, add CORS origins, or trigger the `git` / `osascript`
-side effects of `/api/git-info` and `/api/focus`. The Tauri desktop webview is unaffected: it talks
-over IPC, never HTTP.
+Every `/api/*` route requires the signed credential of a registered, non-revoked **client**, so the
+backend knows _who_ is calling and can cut any one client off without touching the others. Without
+it, any local process (or, when Docker binds `0.0.0.0`, any LAN host) could read session
+transcripts, rewrite `settings.json`, add CORS origins, or trigger the `git` / `osascript` side
+effects of `/api/git-info` and `/api/focus`. The Tauri desktop webview is unaffected: it talks over
+IPC, never HTTP.
 
-### Token resolution (`auth::resolve_api_auth`, once at startup)
+### Model
 
-1. `CCTRACE_API_AUTH=off` → verification **disabled**; a warning is printed to stderr.
-2. `CCTRACE_API_TOKEN=<token>` → that token, verbatim. Not rotatable at runtime.
-3. Otherwise the token file `<config dir>/claude-code-trace/api-token` (sibling of
-   `settings.json`) is read, or created with a fresh 64-hex token if missing. On unix the file is
-   mode `0600`. Config dir per OS: `$XDG_CONFIG_HOME` or `~/.config` (Linux),
-   `~/Library/Application Support` (macOS), `%APPDATA%` (Windows).
+- A **client** is `{ id: uuid, name, builtin, created_at, issued_at, revoked_at? }`, kept in
+  `<config root>/clients.json`. Two are **built in** and registered on first start: `web-ui` (the
+  browser frontend) and `tui`. Users register more from Settings → **Accepted clients** or
+  `POST /api/clients`.
+- A **credential** is an HS256 JWT (`{"alg":"HS256","typ":"JWT"}`) with claims
+  `{ sub: <client id>, name, iat }` and **no expiry**. It is valid iff the signature verifies under
+  the server key **and** `sub` is a registered, non-revoked client **and** `iat >= client.issued_at`.
+- **Reissue** bumps `issued_at` (strictly, even within the same second), so every credential minted
+  before it dies while nobody else's changes. **Revoke** rejects the client outright; reissue
+  un-revokes.
+- The **signing key** is 32 random bytes in `<config root>/api-secret`, created once with `O_EXCL`
+  and mode `0600`, never rotated by the UI (rotating it would invalidate every client at once —
+  delete the file and restart to do that deliberately).
+- Built-in clients' credentials are written to `<config root>/clients/<name>.jwt` (`0600`) so the
+  Vite dev server (`web-ui`) and the TUI (`tui`) can read them; they are rewritten on reissue and
+  removed on revoke. User-registered clients are shown their credential **once** and it is never
+  stored — the backend only ever needs the key to verify.
 
-Creation uses `O_EXCL`: in `cctrace --web`, Tauri starts Vite _before_ the Rust binary, and the
-Vite plugin (`bin/api-token.mjs`) may create the file first. Whichever side loses the race re-reads
-the winner's token (retrying briefly while the winner is still writing), so both converge. If the
-file cannot be read or created the server fails **closed**: it runs with an unpersisted one-off token
-(`api_token_source: "ephemeral"`), never unauthenticated, and Settings says so rather than blaming
-`CCTRACE_API_TOKEN`. The Vite side throws instead, so the dev server fails loudly rather than baking
-a token no backend accepts.
+Config root per OS: `$XDG_CONFIG_HOME` or `~/.config` (Linux), `~/Library/Application Support`
+(macOS), `%APPDATA%` (Windows), each `/claude-code-trace`; `CCTRACE_CONFIG_DIR` overrides it. The JWT
+code is a deliberately small implementation over `hmac` + `sha2` with a constant-time MAC compare;
+any `alg` other than `HS256` (including `none`) is rejected before the payload is decoded.
 
-`AppState.api_auth: RwLock<ApiAuth>` holds the live value; the middleware reads it on every request
-so a rotation takes effect immediately. Rotation writes a sibling temp file and renames it over the
-token file, so concurrent readers never see it empty. When a request's token does **not** match and
-the live token came from the file, the middleware re-reads the file once before rejecting: if another
-cctrace process (a background `--web` service next to the desktop app, say) rotated it, the live
-token heals on the spot instead of every client getting 401 until a restart.
+### Startup (`auth::resolve_auth`)
 
-### Accepted carriers (`auth::require_api_token`)
+1. `CCTRACE_API_AUTH=off` → verification **disabled**; a warning is printed to stderr. No identity
+   is attached to requests and client management is refused.
+2. Otherwise load or create `api-secret`, load `clients.json`, add any missing built-in client, and
+   (re)write `clients/web-ui.jwt` / `clients/tui.jwt` when missing or no longer valid under the
+   current key and `issued_at`. A `clients.json` that does not parse is never overwritten in place:
+   it is moved to `clients.json.corrupt-<unix time>` (so the clients it held can be recovered by
+   hand), a fresh registry with new built-ins is started, and a loud warning says that every
+   previously issued credential is now invalid.
+3. If the config dir cannot be used the server fails **closed**: it runs with an in-memory key
+   (`api_auth_source: "ephemeral"`), the built-ins are registered in memory, and Settings explains
+   that credentials issued now die with the process and the TUI cannot read its own.
 
-Checked in this order with a constant-time comparison; any match passes:
+`AppState` holds `auth: RwLock<AuthMode>`, `clients: RwLock<ClientRegistry>` and the live `web-ui`
+credential. All writes (`clients.json`, `clients/*.jwt`) go through a sibling temp file and a rename,
+so concurrent readers never see them empty. Several cctrace processes may share one config dir (a
+background `--web` service next to the desktop app, say), so the registry is treated as shared state:
 
-| Carrier                         | Used by                                                     |
-| ------------------------------- | ----------------------------------------------------------- |
-| `X-CCTrace-Token: <token>`      | Web UI `fetch` (`src/lib/invoke.ts`), TUI (`tui-py/api.py`) |
-| `Authorization: Bearer <token>` | curl / external tools                                       |
-| `?token=<token>` query          | Browser `EventSource` on `/api/events` (cannot set headers) |
-| `cctrace_token` cookie          | Docker same-origin UI (set by the server, see below)        |
+- When a verified credential names a client the in-memory registry does not accept (unknown id or
+  stale `iat`), the middleware re-reads `clients.json` once before rejecting, so a client registered
+  or reissued by another process is accepted on the spot instead of getting 401 until a restart.
+- Register, reissue and revoke run under the registry write lock, **adopt the on-disk registry
+  first**, apply the change, and save it before it becomes visible in memory — so one process's
+  stale copy never overwrites another's revocation, and a failed save leaves memory untouched.
+- The refresh compares and swaps under the same write lock (no window in which a refresh loaded
+  before a revoke could replace the revoked state), and never adopts a file that is missing, does
+  not parse, or lacks the built-in clients — deleting `clients.json` while the server runs must not
+  lock every client out; startup handles that case.
 
-A request with no valid token gets `401 {"error": "missing or invalid API token — ..."}`. `OPTIONS`
+### Accepted carriers (`auth::require_client`)
+
+Checked in this order; the first credential that verifies **and** maps to a live client wins:
+
+| Carrier                              | Used by                                                     |
+| ------------------------------------ | ----------------------------------------------------------- |
+| `X-CCTrace-Token: <credential>`      | Web UI `fetch` (`src/lib/invoke.ts`), TUI (`tui-py/api.py`) |
+| `Authorization: Bearer <credential>` | curl / external tools                                       |
+| `?token=<credential>` query          | Browser `EventSource` on `/api/events` (cannot set headers) |
+| `cctrace_token` cookie               | Docker same-origin UI (set by the server, see below)        |
+
+The cookie carrier is honoured only when the request has no `Sec-Fetch-Site` header (non-browser or
+older clients) or it is `same-origin` / `none`. `SameSite=Strict` already stops cross-_site_ pages,
+but a page on another port of the same host is same-_site_: a `<form method=POST>` auto-submitted
+from `localhost:<other>` would otherwise carry the cookie to a body-less mutating route such as
+`/api/clients/{id}/revoke` (a simple request, so CORS never blocks it). Browsers label such requests
+`same-site`, and the header carrier is unaffected because forms cannot set custom headers.
+
+On success the caller's `ClientIdentity { id, name }` is attached to the request (`GET /api/whoami`
+returns it). Otherwise `401 {"error": "invalid or revoked client credential — ..."}`. `OPTIONS`
 always passes so CORS preflights are never blocked, and CORS runs outermost so the 401 carries CORS
-headers and the browser can read the error body. The middleware is applied with `route_layer`, so
-it covers only the registered API routes: the static UI fallback stays public and unknown paths
-still 404 rather than 401.
+headers and the browser can read the error body. The middleware is applied with `route_layer`, so it
+covers only the registered API routes: the static UI fallback stays public and unknown paths still 404
+rather than 401.
 
-### How each client gets the token
+### How each client gets its credential
 
 - **Web/dev mode** (`cctrace --web`, Vite on 1420 → API on 11423): the `cctrace-api-token` Vite
-  plugin in `vite.config.ts` reads the token file and serves it as the virtual module
-  `virtual:cctrace-api-token` — `""` in production builds, so a bundle never contains a token.
-  `src/lib/apiToken.ts` imports it; `invoke.ts` sends the header and `listen.ts` appends `?token=`.
-  When the file changes on disk (Regenerate from this tab, another tab, or another process) the plugin
+  plugin in `vite.config.ts` reads `clients/web-ui.jwt` (read-only — `bin/api-token.mjs`; the plugin
+  never creates anything, only the backend holds the key) and serves it as the virtual module
+  `virtual:cctrace-api-token` — `""` in production builds, so a bundle never contains a credential,
+  and `""` until the backend has written the file on a first run (the plugin watches the file, the
+  `clients/` directory and the config root, so it sees the file appear at any of those levels).
+  `src/lib/apiToken.ts` imports it;
+  `invoke.ts` sends the header and `listen.ts` appends `?token=`. When the file appears or changes on
+  disk (Reissue `web-ui` from this tab, another tab, the desktop app or any other client) the plugin
   invalidates the module and pushes it over HMR; `apiToken.ts` accepts the update and every open tab
-  adopts the new token in place — no dev-server restart and no page reload (a restart would make Vite's
-  client full-reload the page and tear down the Settings modal the user just clicked in).
-- **Docker / same-origin** (`CCTRACE_STATIC_DIR` set): `auth::attach_token_cookie` wraps the static
-  fallback and adds `Set-Cookie: cctrace_token=<token>; Path=/; HttpOnly; SameSite=Strict` to
-  `text/html` responses — but **only when the request `Host` is allowlisted**: `localhost`,
-  `127.0.0.1`, `::1`, or the host part of any allowed CORS origin (defaults, `CCTRACE_ALLOWED_ORIGINS`,
-  Settings UI). Without that gate a DNS-rebinding page pointed at the `0.0.0.0`-bound port would be
-  issued the cookie and become a fully authenticated client. Reaching a container via a LAN IP or
-  reverse-proxy hostname therefore requires adding it to `CCTRACE_ALLOWED_ORIGINS` (or passing the
-  token explicitly).
-- **TUI**: `tui-py/auth.py` mirrors the resolution (env → file, never creates) and
-  `auth_headers()` is re-evaluated per request, so a rotated token is picked up without a restart.
-- **Other tools**: copy the token from Settings → API access, or read the file:
-  `curl -H "X-CCTrace-Token: $(cat ~/.config/claude-code-trace/api-token)" http://127.0.0.1:11423/api/settings`.
+  adopts the new credential in place — no dev-server restart and no page reload (a restart would make
+  Vite's client full-reload the page and tear down the Settings modal the user just clicked in).
+  If a tab hit a 401 before the credential existed (backend started after the dev server) or
+  after `web-ui` was revoked, `App` re-runs its bootstrap when the credential arrives over HMR, so
+  the "Not an accepted client" banner clears itself once `web-ui` is (re)issued.
+- **Docker / same-origin** (`CCTRACE_STATIC_DIR` set): `auth::attach_credential_cookie` wraps the
+  static fallback and adds `Set-Cookie: cctrace_token=<web-ui credential>; Path=/; HttpOnly;
+SameSite=Strict` to `text/html` responses — but **only when the request `Host` is allowlisted**:
+  `localhost`, `127.0.0.1`, `::1`, or the host part of any allowed CORS origin (defaults,
+  `CCTRACE_ALLOWED_ORIGINS`, Settings UI). Without that gate a DNS-rebinding page pointed at the
+  `0.0.0.0`-bound port would be issued the cookie and become a fully authenticated client. Reaching a
+  container via a LAN IP or reverse-proxy hostname therefore requires adding it to
+  `CCTRACE_ALLOWED_ORIGINS` (or registering a client and passing its credential explicitly). No cookie
+  is issued while `web-ui` is revoked, so revoking it locks every browser out until another client
+  (the desktop app, the TUI's credential, a script) reissues it.
+- **TUI**: `tui-py/auth.py` reads `clients/tui.jwt` (never creates it) and `auth_headers()` is
+  re-evaluated per request and per SSE (re)connect, so a reissued `tui` credential is picked up
+  without a restart. A 401 surfaces as `api.ApiAuthError` naming the file and the Settings section.
+- **Other tools**: register a client in Settings → **Accepted clients** (or `POST /api/clients` as an
+  existing client), copy the credential when it is shown, and send it:
+  `curl -H "X-CCTrace-Token: $CRED" http://127.0.0.1:11423/api/whoami`. To script against a fresh
+  install, the TUI's own file works as a bootstrap:
+  `curl -H "X-CCTrace-Token: $(cat ~/.config/claude-code-trace/clients/tui.jwt)" ...`.
 
 ### Settings UI
 
-`GET /api/settings` reports `api_auth_enabled`, `api_token_source`
-(`"file" | "env" | "ephemeral" | "disabled"`) and `api_token`. The Settings modal's **API access**
-section shows the token masked with Show / Copy / Regenerate; Regenerate is a two-click confirm and
-is disabled for `env` and `ephemeral` tokens.
-`POST /api/settings/token/regenerate` (or the `regenerate_api_token` Tauri command) performs the
-rotation.
+`GET /api/settings` reports `api_auth_enabled`, `api_auth_source` (`"file" | "ephemeral" |
+"disabled"`) and `clients`. The Settings modal's **Accepted clients** section lists them (name,
+built-in badge, since, Active/Revoked) with **Reissue** and **Revoke** per row — both two-click
+confirms; arming Revoke on `web-ui` from a browser warns that it locks this UI out — and an **Add
+client** row that shows the new credential once with Copy. Reissuing `web-ui` from a browser keeps
+that tab working: it swaps the live credential in memory (same-origin tabs also get the new cookie
+from the response; dev tabs get it again over HMR). The Tauri commands `list_clients`,
+`register_client`, `reissue_client`, `revoke_client` mirror the HTTP routes.
 
 Both deployment shapes are exercised end-to-end by the Playwright suite (`npm run test:e2e`,
 `playwright.config.ts`, `e2e/`): a real headless backend plus the real UI in Chromium, once served
-same-origin from a built bundle (cookie path, `Host` gate, live SSE, Regenerate) and once from the Vite
-dev server cross-origin (header + query carriers, plugin/backend token convergence, rotation). It runs
-against `CCTRACE_CONFIG_DIR=e2e/.tmp/...` so it never touches a real token file.
+same-origin from a built bundle (cookie path, `Host` gate, live SSE, register/reissue/revoke, web-ui
+reissue and revoke) and once from the Vite dev server cross-origin (header + query carriers, plugin
+serving the backend-written credential, HMR hot-swap on reissue from the tab and from another
+client). It runs against `CCTRACE_CONFIG_DIR=e2e/.tmp/...` and asserts every secret (`api-secret`,
+`clients.json`, `clients/*.jwt`) stayed on that path.
 
-Note: in dev mode the SSE token travels in the URL. The server keeps no access log today; if one is
-added, the `token` query parameter must be redacted.
+Note: in dev mode the SSE credential travels in the URL. The server keeps no access log today; if one
+is added, the `token` query parameter must be redacted.
 
 ---
 

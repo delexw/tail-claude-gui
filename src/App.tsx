@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke, ApiAuthError } from "./lib/invoke";
+import { onApiTokenChange } from "./lib/apiToken";
 import type { ViewState, SessionInfo, DisplayMessage } from "./types";
 import { useSession } from "./hooks/useSession";
 import { usePicker } from "./hooks/usePicker";
@@ -108,36 +109,54 @@ export function App() {
   // Settings modal included — so a banner replaces the usual bootstrap path.
   const [authError, setAuthError] = useState<string | null>(null);
 
-  // Auto-discover sessions on mount; show settings if no path configured
+  // Bootstrap: load settings, then either open Settings (no projects dir yet)
+  // or discover sessions. A 401 means this browser is not an accepted client;
+  // every other call would fail the same way, so stop at the banner.
+  const discover = useCallback(async () => {
+    let dirExists = false;
+    try {
+      const settings = await invoke<{
+        projects_dir: string | null;
+        effective_dir_exists: boolean;
+        can_focus: boolean;
+      }>("get_settings");
+      dirExists = settings.effective_dir_exists;
+      setCanFocus(settings.can_focus);
+    } catch (err) {
+      if (err instanceof ApiAuthError) {
+        setAuthError(err.message);
+        return;
+      }
+      // no settings file yet
+    }
+    if (!dirExists) {
+      setShowSettings(true);
+      return;
+    }
+    await loadProjectDirs();
+  }, [loadProjectDirs]);
+
+  // Auto-discover sessions on mount (once, even under StrictMode's double effect).
   const discoveredRef = useRef(false);
   useEffect(() => {
     if (discoveredRef.current) return;
     discoveredRef.current = true;
-    const discover = async () => {
-      let dirExists = false;
-      try {
-        const settings = await invoke<{
-          projects_dir: string | null;
-          effective_dir_exists: boolean;
-          can_focus: boolean;
-        }>("get_settings");
-        dirExists = settings.effective_dir_exists;
-        setCanFocus(settings.can_focus);
-      } catch (err) {
-        if (err instanceof ApiAuthError) {
-          setAuthError(err.message);
-          return;
-        }
-        // no settings file yet
-      }
-      if (!dirExists) {
-        setShowSettings(true);
-        return;
-      }
-      await loadProjectDirs();
-    };
     void discover();
-  }, [loadProjectDirs]);
+  }, [discover]);
+
+  // Recover from the banner when this tab's credential arrives or changes:
+  // in dev/web mode the backend may start after the dev server (first run),
+  // or `web-ui` may have been reissued from another client. The Vite plugin
+  // pushes the new value over HMR, so re-run the bootstrap instead of leaving
+  // a banner whose remedy (a restart) is no longer needed.
+  useEffect(() => {
+    if (!authError) return;
+    return onApiTokenChange((credential) => {
+      if (!credential) return;
+      setAuthError(null);
+      void discover();
+    });
+  }, [authError, discover]);
 
   // Sync session watcher's ongoing status to picker (avoids race condition
   // where picker watcher emits before session watcher updates).
@@ -494,9 +513,11 @@ export function App() {
     <div className="app">
       {authError && (
         <div className="app-auth-banner" role="alert">
-          <strong>Not an accepted client.</strong> This browser did not present the API token, so
-          the backend refused the connection. In dev/web mode restart <code>cctrace --web</code>; in
-          Docker open the UI via localhost or an allowed origin.
+          <strong>Not an accepted client.</strong> This browser did not present a valid{" "}
+          <code>web-ui</code> client credential, so the backend refused the connection. In dev/web
+          mode restart <code>cctrace --web</code>; in Docker open the UI via localhost or an allowed
+          origin. If <code>web-ui</code> was revoked, reissue it from the desktop app or another
+          client.
           <span className="app-auth-banner__detail">{authError}</span>
         </div>
       )}

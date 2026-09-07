@@ -16,12 +16,12 @@ let sseSource: EventSource | null = null;
 let sseRefCount = 0;
 
 /** Every listener currently registered, by event name, so a replacement
- * connection (after a token rotation or a closed stream) can re-attach them. */
+ * connection (after a credential reissue or a closed stream) can re-attach them. */
 const registered = new Map<string, Set<EventListener>>();
 
 function openSource(): EventSource {
-  // `EventSource` can't set headers, so the API token rides in the query
-  // string (see lib/apiToken.ts). Empty in Docker, where the cookie is used.
+  // `EventSource` can't set headers, so the client credential rides in the
+  // query string (see lib/apiToken.ts). Empty in Docker, where the cookie is used.
   const source = new EventSource(withTokenQuery(`${API_BASE}/api/events`));
   for (const [event, handlers] of registered) {
     for (const handler of handlers) source.addEventListener(event, handler);
@@ -58,8 +58,8 @@ export function reconnectSse(): void {
   sseSource = openSource();
 }
 
-// Wherever the token changes — this tab's Regenerate, or a rotation by another
-// process pushed here over HMR (see lib/apiToken.ts) — the stream follows it.
+// Wherever the credential changes — this tab's Reissue, or a reissue by another
+// client pushed here over HMR (see lib/apiToken.ts) — the stream follows it.
 onApiTokenChange(() => reconnectSse());
 
 export async function listen<T>(

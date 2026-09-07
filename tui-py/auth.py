@@ -1,17 +1,21 @@
-"""Shared HTTP API client token — TUI side.
+"""The TUI's HTTP API client credential.
 
 The Rust backend (``src-tauri/src/auth.rs``) requires every ``/api/*`` request
-to carry a secret token so that only accepted clients can reach it. This module
-mirrors the backend's resolution so the TUI, running as the same OS user,
-finds the same token:
+to carry the signed credential of a registered client, so it knows *who* is
+calling. The TUI is one of the two built-in clients (``tui``; the browser UI is
+``web-ui``): the backend registers it on first start and writes its credential
+to ``<config root>/clients/tui.jwt`` for this module to read. Only the backend
+can mint credentials (it holds the signing key), so nothing here ever creates
+or writes a file.
 
-1. ``CCTRACE_API_AUTH=off``  → no token (verification disabled)
-2. ``CCTRACE_API_TOKEN=<t>`` → that token
-3. ``<config dir>/claude-code-trace/api-token`` → read it (never created here —
-   the backend owns the file).
+Resolution:
 
-``auth_headers()`` re-resolves on every call, so a token rotated from the
-Settings UI is picked up on the TUI's next request without a restart.
+1. ``CCTRACE_API_AUTH=off`` → no credential (verification disabled)
+2. ``<config root>/clients/tui.jwt`` → read it
+
+``auth_headers()`` re-resolves on every call, so a ``tui`` credential reissued
+from Settings → Accepted clients is picked up on the TUI's next request
+without a restart.
 """
 
 from __future__ import annotations
@@ -22,9 +26,9 @@ from collections.abc import Mapping
 from pathlib import Path
 
 TOKEN_HEADER = "X-CCTrace-Token"
-ENV_TOKEN = "CCTRACE_API_TOKEN"
 ENV_AUTH = "CCTRACE_API_AUTH"
 ENV_CONFIG_DIR = "CCTRACE_CONFIG_DIR"
+CLIENT_NAME = "tui"
 
 
 def config_dir(
@@ -59,24 +63,23 @@ def app_config_root(
     return config_dir(platform, env, home) / "claude-code-trace"
 
 
-def token_path(
+def credential_path(
     platform: str | None = None,
     env: Mapping[str, str] | None = None,
     home: Path | None = None,
 ) -> Path:
-    """``<config root>/api-token`` — sibling of ``settings.json``."""
-    return app_config_root(platform, env, home) / "api-token"
+    """``<config root>/clients/tui.jwt`` — written by the backend, read here."""
+    return app_config_root(platform, env, home) / "clients" / f"{CLIENT_NAME}.jwt"
 
 
-def resolve_api_token(env: Mapping[str, str] | None = None, path: Path | None = None) -> str | None:
-    """The token to present, or ``None`` when disabled or not (yet) available."""
+def resolve_credential(
+    env: Mapping[str, str] | None = None, path: Path | None = None
+) -> str | None:
+    """The credential to present, or ``None`` when disabled or not (yet) written."""
     env = os.environ if env is None else env
     if env.get(ENV_AUTH, "").strip().lower() == "off":
         return None
-    from_env = env.get(ENV_TOKEN, "").strip()
-    if from_env:
-        return from_env
-    path = token_path(env=env) if path is None else path
+    path = credential_path(env=env) if path is None else path
     try:
         text = path.read_text(encoding="utf-8").strip()
     except OSError:
@@ -84,7 +87,7 @@ def resolve_api_token(env: Mapping[str, str] | None = None, path: Path | None = 
     return text or None
 
 
-def auth_headers(token: str | None = None) -> dict[str, str]:
-    """Headers to send with every backend call (empty when no token applies)."""
-    tok = resolve_api_token() if token is None else token
-    return {TOKEN_HEADER: tok} if tok else {}
+def auth_headers(credential: str | None = None) -> dict[str, str]:
+    """Headers to send with every backend call (empty when no credential applies)."""
+    cred = resolve_credential() if credential is None else credential
+    return {TOKEN_HEADER: cred} if cred else {}

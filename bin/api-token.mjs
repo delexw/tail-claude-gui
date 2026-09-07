@@ -1,26 +1,28 @@
 /**
- * Shared HTTP API client token — Node side.
+ * The web UI's HTTP API client credential — Node side.
  *
  * The Rust backend (`src-tauri/src/auth.rs`) requires every `/api/*` request
- * to carry a secret token. In `cctrace --web` the browser UI is served by the
- * Vite dev server on a different origin from the API, so it can't receive the
- * token as a same-origin cookie the way the Docker bundle does. Instead the
- * Vite plugin in `vite.config.ts` calls `resolveApiToken()` here and injects
- * the value as `import.meta.env.VITE_API_TOKEN` at *serve* time only.
+ * to carry the signed credential of a registered client. Two clients are
+ * built in and registered on first start, `web-ui` and `tui`; the backend
+ * writes their credentials to `<config root>/clients/<name>.jwt` so the
+ * processes that need them can read them.
  *
- * This module must mirror the Rust resolution exactly:
- *   1. `CCTRACE_API_AUTH=off`   → null (verification disabled)
- *   2. `CCTRACE_API_TOKEN=<t>`  → that token
- *   3. `<config dir>/claude-code-trace/api-token` → read it, or create it.
+ * In `cctrace --web` the browser UI is served by the Vite dev server on a
+ * different origin from the API, so it can't receive the credential as a
+ * same-origin cookie the way the Docker bundle does. Instead the Vite plugin
+ * in `vite.config.ts` calls `readWebUiCredential()` here and serves the value
+ * as the virtual module `virtual:cctrace-api-token` at *serve* time only.
  *
- * Creation uses `wx` (O_EXCL). `tauri dev` starts Vite *before* the Rust
- * binary, so on a first run either side may be the creator; the loser sees
- * EEXIST and re-reads what the winner wrote, so both converge on one token.
+ * This module is strictly read-only: only the backend mints credentials (it
+ * holds the signing key). Until the backend has started once, the file does
+ * not exist and the credential is `null`; the plugin watches for it.
  */
-import { randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { homedir, platform as osPlatform } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
+
+/** Name of the built-in client the browser frontend runs as. */
+export const WEB_UI_CLIENT = "web-ui";
 
 /** Mirror of Rust's `dirs::config_dir()` for the three supported platforms. */
 export function configDir({ platform = osPlatform(), env = process.env, home = homedir() } = {}) {
@@ -37,70 +39,23 @@ export function appConfigRoot(opts = {}) {
   return override || join(configDir(opts), "claude-code-trace");
 }
 
-/** `<config root>/api-token` — sibling of `settings.json`. */
-export function apiTokenPath(opts = {}) {
-  return join(appConfigRoot(opts), "api-token");
-}
-
-function readToken(path) {
-  try {
-    const t = readFileSync(path, "utf8").trim();
-    return t || null;
-  } catch {
-    return null;
-  }
-}
-
-/** Synchronous pause — Vite's `config` hook is synchronous, and the window
- * between the backend's O_EXCL create and its write is a few milliseconds. */
-function pauseMs(ms) {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
-const EMPTY_FILE_RETRIES = 10;
-const EMPTY_FILE_RETRY_MS = 20;
-
-/** Re-read a file another creator has just made, tolerating the moment
- * between its create and its write. */
-function readTokenWithRetry(path) {
-  for (let attempt = 0; attempt <= EMPTY_FILE_RETRIES; attempt++) {
-    const t = readToken(path);
-    if (t) return t;
-    if (attempt < EMPTY_FILE_RETRIES) pauseMs(EMPTY_FILE_RETRY_MS);
-  }
-  return null;
+/** `<config root>/clients/web-ui.jwt` — written by the backend, read here. */
+export function webUiCredentialPath(opts = {}) {
+  return join(appConfigRoot(opts), "clients", `${WEB_UI_CLIENT}.jwt`);
 }
 
 /**
- * Resolve the token the web UI should send, or `null` when verification is
- * off. Creates the token file (mode 0600) when it does not exist yet.
+ * The credential the web UI should send, or `null` when verification is off
+ * (`CCTRACE_API_AUTH=off`) or the backend has not written the file yet.
+ * Never creates anything.
  */
-export function resolveApiToken(opts = {}) {
+export function readWebUiCredential(opts = {}) {
   const env = opts.env ?? process.env;
   if ((env.CCTRACE_API_AUTH ?? "").trim().toLowerCase() === "off") return null;
-  const fromEnv = (env.CCTRACE_API_TOKEN ?? "").trim();
-  if (fromEnv) return fromEnv;
-
-  const path = apiTokenPath({ ...opts, env });
-  const existing = readToken(path);
-  if (existing) return existing;
-
-  mkdirSync(dirname(path), { recursive: true });
-  const fresh = randomBytes(32).toString("hex");
   try {
-    writeFileSync(path, `${fresh}\n`, { flag: "wx", mode: 0o600 });
-    return fresh;
-  } catch (err) {
-    if (err && err.code === "EEXIST") {
-      const winner = readTokenWithRetry(path);
-      if (winner) return winner;
-      // Never hand the UI a token no backend accepts: fail loudly instead, the
-      // same way the Rust side treats an empty token file.
-      throw new Error(
-        `api-token file exists but is empty: ${path} — delete it and restart, or set CCTRACE_API_TOKEN`,
-        { cause: err },
-      );
-    }
-    throw err;
+    const credential = readFileSync(webUiCredentialPath({ ...opts, env }), "utf8").trim();
+    return credential || null;
+  } catch {
+    return null;
   }
 }

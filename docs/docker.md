@@ -51,15 +51,14 @@ CCTRACE_HOST_PORT=9090 CLAUDE_HOME=/srv/claude docker compose up
 All runtime knobs are environment variables, so you can override them with
 `-e VAR=value` on `docker run` or under `environment:` in compose.
 
-| Variable                  | Default     | What it does                                                                          |
-| ------------------------- | ----------- | ------------------------------------------------------------------------------------- |
-| `CCTRACE_HTTP_HOST`       | `0.0.0.0`   | Bind host for the HTTP server                                                         |
-| `CCTRACE_HTTP_PORT`       | `1421`      | Bind port for the HTTP server                                                         |
-| `CCTRACE_STATIC_DIR`      | `/app/dist` | Directory of static frontend assets to serve                                          |
-| `CCTRACE_ALLOWED_ORIGINS` | (unset)     | Extra CORS origins, comma-separated (see below)                                       |
-| `CCTRACE_API_TOKEN`       | (unset)     | Fixed API client token (see "API access" below)                                       |
-| `CCTRACE_API_AUTH`        | (unset)     | `off` disables the API token check                                                    |
-| `CCTRACE_CONFIG_DIR`      | (unset)     | Relocate `settings.json` + `api-token` (default `$XDG_CONFIG_HOME/claude-code-trace`) |
+| Variable                  | Default     | What it does                                                                             |
+| ------------------------- | ----------- | ---------------------------------------------------------------------------------------- |
+| `CCTRACE_HTTP_HOST`       | `0.0.0.0`   | Bind host for the HTTP server                                                            |
+| `CCTRACE_HTTP_PORT`       | `1421`      | Bind port for the HTTP server                                                            |
+| `CCTRACE_STATIC_DIR`      | `/app/dist` | Directory of static frontend assets to serve                                             |
+| `CCTRACE_ALLOWED_ORIGINS` | (unset)     | Extra CORS origins, comma-separated (see below)                                          |
+| `CCTRACE_API_AUTH`        | (unset)     | `off` disables client verification (see "API access" below)                              |
+| `CCTRACE_CONFIG_DIR`      | (unset)     | Relocate `settings.json` + client secrets (default `$XDG_CONFIG_HOME/claude-code-trace`) |
 
 Outside Docker (i.e. the normal desktop/web app) these variables are not
 set, and the server falls back to the historical defaults
@@ -80,32 +79,43 @@ allowlist is a union), so you can use either or both.
 
 ## API access (client verification)
 
-Every `/api/*` route requires a shared client token, so a container exposed on a LAN port isn't an
-open door to your session transcripts. Nothing to configure for the bundled UI: the server sets the
-token as an `HttpOnly` cookie on the HTML shell, and the browser sends it back automatically.
+Every `/api/*` route requires the signed credential of a registered **client**, so a container
+exposed on a LAN port isn't an open door to your session transcripts, and each caller is identified
+by name. Nothing to configure for the bundled UI: it runs as the built-in `web-ui` client, the server
+sets its credential as an `HttpOnly` cookie on the HTML shell, and the browser sends it back
+automatically.
 
-The token lives in `/home/app/.config/claude-code-trace/api-token` (mode `0600`), i.e. inside the
-persisted config volume, so it survives container recreation. To pin a token instead — for example
-to share it with a script — set `CCTRACE_API_TOKEN`. `CCTRACE_API_AUTH=off` turns the check off
-entirely (not recommended when the port is reachable from other machines).
+The signing key (`api-secret`), the client registry (`clients.json`) and the built-in clients'
+credentials (`clients/web-ui.jwt`, `clients/tui.jwt`) live in `/home/app/.config/claude-code-trace/`
+(mode `0600`), i.e. inside the persisted config volume, so they survive container recreation.
+`CCTRACE_API_AUTH=off` turns verification off entirely (not recommended when the port is reachable
+from other machines).
 
 The cookie is only issued when the request `Host` is `localhost`/`127.0.0.1` or matches an allowed
 origin. So if you open the UI via a LAN IP or a reverse-proxy hostname, add that origin to
 `CCTRACE_ALLOWED_ORIGINS` (e.g. `http://192.168.1.20:1421`) or the Settings UI — the same knob that
-was already needed for cross-origin API access. Scripts hitting the container's API directly must
-send the token:
+was already needed for cross-origin API access.
+
+Scripts hitting the container's API directly need their own client. Register one in the UI
+(Settings → **Accepted clients** → Add client; the credential is shown once) or over the API, using
+the `tui` client's file as the bootstrap credential:
 
 ```bash
-TOKEN=$(docker compose exec cctrace cat /home/app/.config/claude-code-trace/api-token)
-curl -H "X-CCTrace-Token: $TOKEN" http://localhost:1421/api/settings
+TUI=$(docker compose exec cctrace cat /home/app/.config/claude-code-trace/clients/tui.jwt)
+curl -H "X-CCTrace-Token: $TUI" -H "Content-Type: application/json" \
+  -d '{"name":"backup-script"}' http://localhost:1421/api/clients
+# → {"client":{...},"credential":"eyJ..."}   ← store the credential; it is not kept
+curl -H "X-CCTrace-Token: eyJ..." http://localhost:1421/api/whoami
 ```
+
+Revoke or reissue any client from the same Settings section without affecting the others.
 
 ## Volumes
 
-| Container path      | Purpose                                                              |
-| ------------------- | -------------------------------------------------------------------- |
-| `/home/app/.claude` | Source of session JSONL files (mount your host's `~/.claude` here)   |
-| `/home/app/.config` | `settings.json` — persisted read-write so settings survive recreates |
+| Container path      | Purpose                                                                                                                         |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `/home/app/.claude` | Source of session JSONL files (mount your host's `~/.claude` here)                                                              |
+| `/home/app/.config` | `settings.json`, `api-secret`, `clients.json`, `clients/*.jwt` — persisted read-write so settings and clients survive recreates |
 
 The app only needs to **read** session logs, so mounting `/home/app/.claude`
 read-only (`:ro`) is recommended and is what the shipped `docker-compose.yml`

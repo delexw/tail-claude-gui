@@ -11,16 +11,45 @@ interface SettingsResponse {
   effective_dir_exists: boolean;
   wsl_distros: string[];
   allowed_origins: string[];
-  /** Whether the HTTP API requires the shared client token. */
+  /** Whether the HTTP API requires a registered client's credential. */
   api_auth_enabled?: boolean;
-  /** "file" (rotatable here), "env" (CCTRACE_API_TOKEN, read-only), "ephemeral"
-   * (token file unusable at startup; one-off, read-only) or "disabled". */
-  api_token_source?: ApiTokenSource;
-  /** The token accepted clients must present; null when disabled. */
-  api_token?: string | null;
+  /** Where the signing key lives: "file" (persisted), "ephemeral" (config dir
+   * unusable at startup — credentials die with the process) or "disabled". */
+  api_auth_source?: ApiAuthSource;
+  /** The accepted clients. Credentials are never included. */
+  clients?: ApiClient[];
 }
 
-type ApiTokenSource = "file" | "env" | "ephemeral" | "disabled";
+type ApiAuthSource = "file" | "ephemeral" | "disabled";
+
+/** Mirrors `clients::Client` on the backend. */
+export interface ApiClient {
+  id: string;
+  name: string;
+  /** Registered automatically (`web-ui`, `tui`); credential kept in a file the
+   * dev server / TUI read. */
+  builtin: boolean;
+  /** Unix seconds. */
+  created_at: number;
+  issued_at: number;
+  revoked_at?: number | null;
+}
+
+/** `POST /api/clients` and `.../reissue` reply: the credential is returned
+ * exactly once and never stored by the backend. */
+interface IssuedCredential {
+  client: ApiClient;
+  credential: string;
+}
+
+/** Name of the built-in client this browser UI runs as. */
+const WEB_UI_CLIENT = "web-ui";
+
+type PendingAction = { kind: "reissue" | "revoke"; id: string };
+
+function formatDate(unixSeconds: number): string {
+  return new Date(unixSeconds * 1000).toLocaleDateString();
+}
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -67,12 +96,13 @@ export function SettingsModal({
   const [availableDistros, setAvailableDistros] = useState<string[]>([]);
   const [selectedDistros, setSelectedDistros] = useState<Set<string>>(new Set());
   const [allowedOriginsText, setAllowedOriginsText] = useState("");
-  const [apiToken, setApiTokenState] = useState<string | null>(null);
-  const [apiTokenSource, setApiTokenSource] = useState<ApiTokenSource>("file");
-  const [showToken, setShowToken] = useState(false);
-  const [confirmRegen, setConfirmRegen] = useState(false);
-  const [regenerating, setRegenerating] = useState(false);
-  const [tokenNotice, setTokenNotice] = useState("");
+  const [authSource, setAuthSource] = useState<ApiAuthSource>("file");
+  const [clients, setClients] = useState<ApiClient[]>([]);
+  const [newClientName, setNewClientName] = useState("");
+  const [issued, setIssued] = useState<IssuedCredential | null>(null);
+  const [pending, setPending] = useState<PendingAction | null>(null);
+  const [busyClient, setBusyClient] = useState<string | null>(null);
+  const [clientNotice, setClientNotice] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -83,10 +113,8 @@ export function SettingsModal({
     setEffectiveDirExists(res.effective_dir_exists);
     setSelectedDistros(new Set(res.wsl_distros ?? []));
     setAllowedOriginsText((res.allowed_origins ?? []).join("\n"));
-    setApiTokenState(res.api_token ?? null);
-    setApiTokenSource(
-      res.api_token_source ?? (res.api_auth_enabled === false ? "disabled" : "file"),
-    );
+    setAuthSource(res.api_auth_source ?? (res.api_auth_enabled === false ? "disabled" : "file"));
+    setClients(res.clients ?? []);
   }, []);
 
   useEffect(() => {
@@ -154,44 +182,117 @@ export function SettingsModal({
     }
   }, [applyResponse, onSaved, onClose]);
 
-  const handleCopyToken = useCallback(async () => {
-    if (!apiToken) return;
-    try {
-      await navigator.clipboard.writeText(apiToken);
-      setTokenNotice("Token copied to clipboard.");
-    } catch {
-      setTokenNotice("Could not access the clipboard — use Show and copy it manually.");
-    }
-  }, [apiToken]);
+  const replaceClient = useCallback((client: ApiClient) => {
+    setClients((prev) => prev.map((c) => (c.id === client.id ? client : c)));
+  }, []);
 
-  // Two-click confirm: the first click arms the button, the second rotates.
-  // Rotation invalidates every other client's token, so it shouldn't be one
-  // accidental click away.
-  const handleRegenerate = useCallback(async () => {
-    if (!confirmRegen) {
-      setConfirmRegen(true);
-      setTokenNotice(
-        "Click again to confirm. Other clients (TUI, scripts) will need the new token.",
-      );
-      return;
-    }
-    setConfirmRegen(false);
-    setRegenerating(true);
-    setError("");
+  const handleCopyCredential = useCallback(async () => {
+    if (!issued) return;
     try {
-      const res = await invoke<SettingsResponse>("regenerate_api_token");
-      applyResponse(res);
-      // Keep this tab working: send the new token from now on. lib/listen.ts
-      // subscribes to this change and reopens the SSE stream, which was
-      // authenticated with the old token.
-      setLiveApiToken(res.api_token);
-      setTokenNotice("Token regenerated — update the TUI and any scripts that used the old one.");
+      await navigator.clipboard.writeText(issued.credential);
+      setClientNotice("Credential copied to clipboard.");
+    } catch {
+      setClientNotice(
+        "Could not access the clipboard — select the credential and copy it manually.",
+      );
+    }
+  }, [issued]);
+
+  const handleRegister = useCallback(async () => {
+    const name = newClientName.trim();
+    // One client action at a time: a second Enter while the first request is
+    // in flight would register the same name twice (and error).
+    if (!name || busyClient) return;
+    setBusyClient("new");
+    setError("");
+    setPending(null);
+    try {
+      const res = await invoke<IssuedCredential>("register_client", { name });
+      setClients((prev) => [...prev, res.client]);
+      setIssued(res);
+      setNewClientName("");
+      setClientNotice(
+        `Client "${res.client.name}" registered. Copy its credential now — it is shown once and not kept.`,
+      );
     } catch (err) {
       setError(String(err));
     } finally {
-      setRegenerating(false);
+      setBusyClient(null);
     }
-  }, [confirmRegen, applyResponse]);
+  }, [newClientName, busyClient]);
+
+  // Reissue and revoke are two-click confirms: the first click arms the
+  // button, the second acts. Either one cuts off a running client, so neither
+  // should be one accidental click away.
+  const handleReissue = useCallback(
+    async (client: ApiClient) => {
+      if (pending?.kind !== "reissue" || pending.id !== client.id) {
+        setPending({ kind: "reissue", id: client.id });
+        setClientNotice(
+          `Click again to confirm. Every credential "${client.name}" holds now will stop working.`,
+        );
+        return;
+      }
+      if (busyClient) return; // one client action in flight at a time
+      setPending(null);
+      setBusyClient(client.id);
+      setError("");
+      try {
+        const res = await invoke<IssuedCredential>("reissue_client", { id: client.id });
+        replaceClient(res.client);
+        setIssued(res);
+        if (res.client.name === WEB_UI_CLIENT) {
+          // Keep this tab working: send the new credential from now on.
+          // lib/listen.ts subscribes to this change and reopens the SSE
+          // stream, which was authenticated with the old one. (Same-origin
+          // tabs also received it as the cookie on this response; dev tabs get
+          // it again over HMR when the plugin sees the rewritten file.)
+          setLiveApiToken(res.credential);
+        }
+        setClientNotice(
+          res.client.builtin
+            ? `"${res.client.name}" reissued — its credential file was rewritten, so the bundled ${
+                res.client.name === WEB_UI_CLIENT ? "web UI" : "TUI"
+              } follows automatically.`
+            : `"${res.client.name}" reissued. Copy the new credential now — it is shown once and not kept.`,
+        );
+      } catch (err) {
+        setError(String(err));
+      } finally {
+        setBusyClient(null);
+      }
+    },
+    [pending, busyClient, replaceClient],
+  );
+
+  const handleRevoke = useCallback(
+    async (client: ApiClient) => {
+      if (pending?.kind !== "revoke" || pending.id !== client.id) {
+        setPending({ kind: "revoke", id: client.id });
+        setClientNotice(
+          client.name === WEB_UI_CLIENT
+            ? "Click again to confirm. Revoking web-ui locks every browser tab — including this one — out of the API until it is reissued from the desktop app or another client."
+            : `Click again to confirm. "${client.name}" will be rejected immediately.`,
+        );
+        return;
+      }
+      if (busyClient) return; // one client action in flight at a time
+      setPending(null);
+      setBusyClient(client.id);
+      setError("");
+      try {
+        const res = await invoke<ApiClient>("revoke_client", { id: client.id });
+        replaceClient(res);
+        if (issued?.client.id === res.id) setIssued(null);
+        setClientNotice(`"${res.name}" revoked.`);
+      } catch (err) {
+        setError(String(err));
+      } finally {
+        setBusyClient(null);
+      }
+    },
+    [pending, busyClient, replaceClient, issued],
+  );
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -210,7 +311,7 @@ export function SettingsModal({
       onClose={onClose}
       header={<span className="settings-modal__title">Settings</span>}
       initialWidth={520}
-      initialHeight={460}
+      initialHeight={560}
     >
       <div className="settings-modal">
         <label className="settings-modal__label" htmlFor="projects-dir">
@@ -292,72 +393,152 @@ export function SettingsModal({
           rows={3}
         />
 
-        <label className="settings-modal__label settings-modal__label--section">API access</label>
-        {apiTokenSource === "disabled" ? (
+        <label className="settings-modal__label settings-modal__label--section">
+          Accepted clients
+        </label>
+        {authSource === "disabled" ? (
           <p className="settings-modal__hint">
             Client verification is off (CCTRACE_API_AUTH=off): any local process can call the HTTP
-            API. Unset the variable to require the token again.
+            API. Unset the variable to require a registered client again.
           </p>
         ) : (
           <>
             <p className="settings-modal__hint">
-              Only clients presenting this token can call the local HTTP API. The bundled web UI and
-              TUI pick it up automatically; give it to other tools as an{" "}
-              <code>X-CCTrace-Token</code> header.
+              Only registered clients can call the local HTTP API, each with its own signed
+              credential sent as an <code>X-CCTrace-Token</code> header. The bundled web UI and TUI
+              are registered automatically; add one for every script or tool you connect.
             </p>
-            <div className="settings-modal__token-row">
+            {authSource === "ephemeral" && (
+              <p className="settings-modal__hint settings-modal__hint--missing">
+                The signing key could not be written at startup, so credentials issued now stop
+                working when the app restarts and the TUI cannot read its own (see the server log).
+                Fix the config directory and restart.
+              </p>
+            )}
+            <table className="settings-modal__clients" aria-label="Accepted clients">
+              <thead>
+                <tr>
+                  <th>Client</th>
+                  <th>Since</th>
+                  <th>Status</th>
+                  <th aria-label="Actions" />
+                </tr>
+              </thead>
+              <tbody>
+                {clients.map((client) => {
+                  const revoked = client.revoked_at != null;
+                  const busy = busyClient === client.id;
+                  const armed = pending?.id === client.id ? pending.kind : null;
+                  return (
+                    <tr key={client.id} data-client={client.name}>
+                      <td>
+                        <span className="settings-modal__client-name">{client.name}</span>
+                        {client.builtin && (
+                          <span className="settings-modal__client-badge">built-in</span>
+                        )}
+                      </td>
+                      <td>{formatDate(client.created_at)}</td>
+                      <td
+                        className={
+                          revoked
+                            ? "settings-modal__client-status settings-modal__client-status--revoked"
+                            : "settings-modal__client-status"
+                        }
+                      >
+                        {revoked ? "Revoked" : "Active"}
+                      </td>
+                      <td className="settings-modal__client-actions">
+                        <button
+                          type="button"
+                          className="settings-modal__btn"
+                          onClick={() => void handleReissue(client)}
+                          disabled={busy}
+                          aria-label={`Reissue ${client.name}`}
+                          aria-pressed={armed === "reissue"}
+                        >
+                          {armed === "reissue" ? "Confirm reissue?" : "Reissue"}
+                        </button>
+                        <button
+                          type="button"
+                          className="settings-modal__btn"
+                          onClick={() => void handleRevoke(client)}
+                          disabled={busy || revoked}
+                          aria-label={`Revoke ${client.name}`}
+                          aria-pressed={armed === "revoke"}
+                        >
+                          {armed === "revoke" ? "Confirm revoke?" : "Revoke"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div className="settings-modal__credential-row">
               <input
-                className="settings-modal__input settings-modal__input--token"
-                type={showToken ? "text" : "password"}
-                value={apiToken ?? ""}
-                readOnly
-                aria-label="API token"
+                className="settings-modal__input"
+                type="text"
+                value={newClientName}
+                onChange={(e) => {
+                  setNewClientName(e.target.value);
+                  setError("");
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void handleRegister();
+                  }
+                }}
+                placeholder="New client name (e.g. ci-script)"
+                aria-label="New client name"
                 spellCheck={false}
+                maxLength={64}
               />
               <button
                 type="button"
                 className="settings-modal__btn"
-                onClick={() => setShowToken((v) => !v)}
+                onClick={() => void handleRegister()}
+                disabled={busyClient === "new" || !newClientName.trim()}
               >
-                {showToken ? "Hide" : "Show"}
-              </button>
-              <button
-                type="button"
-                className="settings-modal__btn"
-                onClick={handleCopyToken}
-                disabled={!apiToken}
-              >
-                Copy
-              </button>
-              <button
-                type="button"
-                className="settings-modal__btn"
-                onClick={handleRegenerate}
-                disabled={regenerating || apiTokenSource !== "file"}
-                title={
-                  apiTokenSource === "env"
-                    ? "Set by CCTRACE_API_TOKEN"
-                    : apiTokenSource === "ephemeral"
-                      ? "The token file could not be written at startup"
-                      : undefined
-                }
-              >
-                {confirmRegen ? "Confirm regenerate?" : "Regenerate"}
+                Add client
               </button>
             </div>
-            {apiTokenSource === "env" && (
-              <p className="settings-modal__hint">
-                The token is set by CCTRACE_API_TOKEN, so it cannot be regenerated here.
-              </p>
+            {issued && (
+              <>
+                <p className="settings-modal__hint">
+                  Credential for <strong>{issued.client.name}</strong> — store it now, it is not
+                  kept:
+                </p>
+                <div className="settings-modal__credential-row">
+                  <input
+                    className="settings-modal__input settings-modal__input--credential"
+                    type="text"
+                    value={issued.credential}
+                    readOnly
+                    aria-label="New client credential"
+                    spellCheck={false}
+                    onFocus={(e) => e.currentTarget.select()}
+                  />
+                  <button
+                    type="button"
+                    className="settings-modal__btn"
+                    onClick={handleCopyCredential}
+                  >
+                    Copy
+                  </button>
+                  <button
+                    type="button"
+                    className="settings-modal__btn"
+                    onClick={() => setIssued(null)}
+                    aria-label="Dismiss credential"
+                  >
+                    Done
+                  </button>
+                </div>
+              </>
             )}
-            {apiTokenSource === "ephemeral" && (
-              <p className="settings-modal__hint settings-modal__hint--missing">
-                The token file could not be written at startup, so this is a one-off token no other
-                client can read (see the server log). Fix the config directory and restart.
-              </p>
-            )}
-            {tokenNotice && (
-              <p className="settings-modal__hint settings-modal__hint--effective">{tokenNotice}</p>
+            {clientNotice && (
+              <p className="settings-modal__hint settings-modal__hint--effective">{clientNotice}</p>
             )}
           </>
         )}

@@ -3,6 +3,33 @@
 All notable changes to claude-code-trace are documented here. Versions follow
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **Every API client now has its own identity: per-client signed credentials replace the shared
+  token.** v0.14.0 proved a caller was _an_ accepted client but not _which_ one, and revoking one
+  meant rotating everybody. Now every caller of `/api/*` is a registered **client** with a name and
+  an HS256 credential (`{ sub: <client id>, name, iat }`, no expiry); the backend attaches the
+  caller's identity to each request (`GET /api/whoami`). Clients can be **revoked** or **reissued**
+  individually — reissue invalidates every older credential of that client and nobody else's. The
+  web UI (`web-ui`) and the TUI (`tui`) are registered automatically on first start and keep
+  working as before: the dev server and the TUI read their credentials from
+  `<config dir>/clients/<name>.jwt`, and the Docker same-origin UI still gets its credential as an
+  `HttpOnly` cookie. Settings → **API access** becomes **Accepted clients**: list, Add client
+  (credential shown once, never stored), Reissue and Revoke with two-click confirms. New routes
+  `GET|POST /api/clients`, `POST /api/clients/{id}/reissue|revoke`, `GET /api/whoami`; Tauri
+  commands `list_clients`, `register_client`, `reissue_client`, `revoke_client`.
+
+  **Behaviour change:** the shared `api-token` file and `CCTRACE_API_TOKEN` are gone, and
+  `POST /api/settings/token/regenerate` / `regenerate_api_token` are removed. Scripts that sent the
+  shared token must register a client (Settings → Accepted clients, or `POST /api/clients` using the
+  `tui` client's `clients/tui.jwt` as a bootstrap) and send its credential instead. On the first
+  start after upgrading, the backend creates `api-secret`, `clients.json` and the two built-in
+  clients in the config dir; the old `api-token` file is ignored and can be deleted.
+  `CCTRACE_API_AUTH=off` still disables verification. Existing browser tabs and TUIs pick the new
+  credentials up on reload / next request.
+
 ## [0.14.0] — 2026-09-06
 
 This release closes the biggest hole in the local backend: until now anything running on your

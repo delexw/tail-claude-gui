@@ -18,7 +18,7 @@ pub struct Settings {
 }
 
 /// Env var that relocates the whole per-user config directory (`settings.json`,
-/// `api-token`). Used by the e2e suite so a test run never touches a
+/// `api-secret`, `clients.json`, `clients/`). Used by the e2e suite so a test run never touches a
 /// developer's real files; also handy for containers and multi-profile setups.
 pub const ENV_CONFIG_DIR: &str = "CCTRACE_CONFIG_DIR";
 

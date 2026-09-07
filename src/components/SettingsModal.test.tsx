@@ -10,6 +10,10 @@ import { getApiToken, setApiToken } from "../lib/apiToken";
 
 const DEFAULT_DIR = "/Users/x/.claude/projects";
 
+/** The Accepted-clients table row for `name`. */
+const row = (name: string) =>
+  screen.getByText(name, { selector: ".settings-modal__client-name" }).closest("tr")!;
+
 const makeSettings = (
   projects_dir: string | null,
   effective_dir_exists = true,
@@ -388,13 +392,33 @@ describe("SettingsModal", () => {
     expect(onChange).toHaveBeenCalledWith(false);
   });
 
-  // --- API access (shared client token) -------------------------------------
+  // --- Accepted clients (per-client credentials) ---------------------------
 
-  const withToken = (source: "file" | "env" | "ephemeral" | "disabled", token: string | null) => ({
+  const WEB_UI = {
+    id: "11111111-1111-4111-8111-111111111111",
+    name: "web-ui",
+    builtin: true,
+    created_at: 1_700_000_000,
+    issued_at: 1_700_000_000,
+  };
+  const TUI = { ...WEB_UI, id: "22222222-2222-4222-8222-222222222222", name: "tui" };
+  const SCRIPT = {
+    id: "33333333-3333-4333-8333-333333333333",
+    name: "ci-script",
+    builtin: false,
+    created_at: 1_700_000_100,
+    issued_at: 1_700_000_100,
+    revoked_at: 1_700_000_200,
+  };
+
+  const withClients = (
+    source: "file" | "ephemeral" | "disabled",
+    clients: object[] = [WEB_UI, TUI, SCRIPT],
+  ) => ({
     ...makeSettings(null),
     api_auth_enabled: source !== "disabled",
-    api_token_source: source,
-    api_token: token,
+    api_auth_source: source,
+    clients,
   });
 
   const renderModal = () =>
@@ -409,107 +433,191 @@ describe("SettingsModal", () => {
       />,
     );
 
-  const useSettings = (settings: object) => {
+  const useSettings = (settings: object, extra: Record<string, unknown> = {}) => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "list_wsl_distros") return Promise.resolve([]);
-      if (cmd === "regenerate_api_token") return Promise.resolve(withToken("file", "new-token"));
+      if (cmd in extra) {
+        const v = extra[cmd];
+        return v instanceof Error ? Promise.reject(v) : Promise.resolve(v);
+      }
       return Promise.resolve(settings);
     });
   };
 
-  it("shows the API token masked and reveals it with Show", async () => {
-    useSettings(withToken("file", "abc123"));
+  it("lists the accepted clients with built-in badges and status", async () => {
+    useSettings(withClients("file"));
     renderModal();
-    const input = (await screen.findByLabelText("API token")) as HTMLInputElement;
-    await waitFor(() => expect(input.value).toBe("abc123"));
-    expect(input.type).toBe("password");
-    expect(input.readOnly).toBe(true);
-
-    fireEvent.click(screen.getByText("Show"));
-    expect(input.type).toBe("text");
-    expect(screen.getByText("Hide")).toBeInTheDocument();
+    const table = await screen.findByRole("table", { name: "Accepted clients" });
+    expect(table).toBeInTheDocument();
+    expect(row("web-ui")).toHaveTextContent("built-in");
+    expect(row("web-ui")).toHaveTextContent("Active");
+    expect(row("tui")).toHaveTextContent("built-in");
+    expect(row("ci-script")).not.toHaveTextContent("built-in");
+    expect(row("ci-script")).toHaveTextContent("Revoked");
+    // A revoked client cannot be revoked again, but can be reissued.
+    expect((screen.getByLabelText("Revoke ci-script") as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByLabelText("Reissue ci-script") as HTMLButtonElement).disabled).toBe(false);
+    // Credentials are never part of the listing.
+    expect(screen.queryByLabelText("New client credential")).toBeNull();
   });
 
-  it("copies the token to the clipboard", async () => {
+  it("registers a client and shows its credential exactly once", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.assign(navigator, { clipboard: { writeText } });
-    useSettings(withToken("file", "abc123"));
+    const registered = {
+      id: "44444444-4444-4444-8444-444444444444",
+      name: "deploy-bot",
+      builtin: false,
+      created_at: 1_700_000_300,
+      issued_at: 1_700_000_300,
+    };
+    useSettings(withClients("file"), {
+      register_client: { client: registered, credential: "eyJ.deploy.sig" },
+    });
     renderModal();
+    await screen.findByRole("table", { name: "Accepted clients" });
+
+    const addButton = screen.getByText("Add client") as HTMLButtonElement;
+    expect(addButton.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("New client name"), {
+      target: { value: "  deploy-bot " },
+    });
+    expect(addButton.disabled).toBe(false);
+    fireEvent.click(addButton);
+
     await waitFor(() =>
-      expect((screen.getByLabelText("API token") as HTMLInputElement).value).toBe("abc123"),
+      expect(mockInvoke).toHaveBeenCalledWith("register_client", { name: "deploy-bot" }),
     );
+    const credential = (await screen.findByLabelText("New client credential")) as HTMLInputElement;
+    expect(credential.value).toBe("eyJ.deploy.sig");
+    expect(credential.readOnly).toBe(true);
+    expect(screen.getByText(/shown once and not kept/)).toBeInTheDocument();
+    expect(row("deploy-bot")).toHaveTextContent("Active");
+    expect((screen.getByLabelText("New client name") as HTMLInputElement).value).toBe("");
 
     fireEvent.click(screen.getByText("Copy"));
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith("abc123"));
-    expect(screen.getByText("Token copied to clipboard.")).toBeInTheDocument();
-  });
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("eyJ.deploy.sig"));
+    expect(screen.getByText("Credential copied to clipboard.")).toBeInTheDocument();
 
-  it("regenerates only after a confirmation click, then shows the new token and reconnects SSE", async () => {
-    useSettings(withToken("file", "old-token"));
-    renderModal();
-    await waitFor(() =>
-      expect((screen.getByLabelText("API token") as HTMLInputElement).value).toBe("old-token"),
-    );
-
-    fireEvent.click(screen.getByText("Regenerate"));
-    expect(screen.getByText("Confirm regenerate?")).toBeInTheDocument();
-    expect(mockInvoke).not.toHaveBeenCalledWith("regenerate_api_token");
-
-    fireEvent.click(screen.getByText("Confirm regenerate?"));
-    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("regenerate_api_token"));
-    await waitFor(() =>
-      expect((screen.getByLabelText("API token") as HTMLInputElement).value).toBe("new-token"),
-    );
-    // The live token this tab sends from now on was swapped (lib/listen.ts
-    // reopens the SSE stream off this same change).
-    expect(getApiToken()).toBe("new-token");
-    expect(screen.getByText(/Token regenerated/)).toBeInTheDocument();
-    expect(screen.getByText("Regenerate")).toBeInTheDocument();
-    // Regeneration is independent of Save — the modal stays open.
+    fireEvent.click(screen.getByLabelText("Dismiss credential"));
+    expect(screen.queryByLabelText("New client credential")).toBeNull();
+    // Registering never touches this tab's own credential.
+    expect(getApiToken()).toBeNull();
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("shows the backend error when regeneration fails", async () => {
-    useSettings(withToken("file", "old-token"));
-    mockInvoke.mockImplementation((cmd: string) => {
-      if (cmd === "list_wsl_distros") return Promise.resolve([]);
-      if (cmd === "regenerate_api_token") return Promise.reject(new Error("rotation failed"));
-      return Promise.resolve(withToken("file", "old-token"));
+  it("reissues only after a confirmation click and swaps this tab's credential for web-ui", async () => {
+    useSettings(withClients("file"), {
+      reissue_client: {
+        client: { ...WEB_UI, issued_at: 1_700_000_500 },
+        credential: "eyJ.new-web.sig",
+      },
     });
     renderModal();
-    await screen.findByLabelText("API token");
-    fireEvent.click(screen.getByText("Regenerate"));
-    fireEvent.click(screen.getByText("Confirm regenerate?"));
-    await waitFor(() => expect(screen.getByText(/rotation failed/)).toBeInTheDocument());
-    expect(getApiToken()).toBeNull();
+    await screen.findByRole("table", { name: "Accepted clients" });
+
+    fireEvent.click(screen.getByLabelText("Reissue web-ui"));
+    expect(screen.getByText("Confirm reissue?")).toBeInTheDocument();
+    expect(screen.getByText(/Click again to confirm/)).toBeInTheDocument();
+    expect(mockInvoke).not.toHaveBeenCalledWith("reissue_client", expect.anything());
+
+    fireEvent.click(screen.getByText("Confirm reissue?"));
+    await waitFor(() =>
+      expect(mockInvoke).toHaveBeenCalledWith("reissue_client", { id: WEB_UI.id }),
+    );
+    await waitFor(() => expect(getApiToken()).toBe("eyJ.new-web.sig"));
+    expect(screen.getByText(/"web-ui" reissued/)).toBeInTheDocument();
+    expect((screen.getByLabelText("New client credential") as HTMLInputElement).value).toBe(
+      "eyJ.new-web.sig",
+    );
+    expect(screen.getByLabelText("Reissue web-ui")).toHaveTextContent("Reissue");
   });
 
-  it("disables Regenerate when the token comes from CCTRACE_API_TOKEN", async () => {
-    useSettings(withToken("env", "env-token"));
+  it("reissuing a non-web-ui client leaves this tab's credential alone", async () => {
+    setApiToken("mine");
+    useSettings(withClients("file"), {
+      reissue_client: { client: { ...TUI, issued_at: 1_700_000_500 }, credential: "eyJ.tui.sig" },
+    });
     renderModal();
-    await waitFor(() =>
-      expect((screen.getByLabelText("API token") as HTMLInputElement).value).toBe("env-token"),
-    );
-    expect((screen.getByText("Regenerate") as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText(/cannot be regenerated here/)).toBeInTheDocument();
+    await screen.findByRole("table", { name: "Accepted clients" });
+    fireEvent.click(screen.getByLabelText("Reissue tui"));
+    fireEvent.click(screen.getByText("Confirm reissue?"));
+    await waitFor(() => expect(screen.getByText(/"tui" reissued/)).toBeInTheDocument());
+    expect(getApiToken()).toBe("mine");
   });
 
-  it("disables Regenerate and explains when the token could not be persisted", async () => {
-    useSettings(withToken("ephemeral", "oneoff"));
+  it("revokes only after a confirmation click and warns before locking out web-ui", async () => {
+    useSettings(withClients("file"), {
+      revoke_client: { ...TUI, revoked_at: 1_700_000_600 },
+    });
     renderModal();
-    await waitFor(() =>
-      expect((screen.getByLabelText("API token") as HTMLInputElement).value).toBe("oneoff"),
-    );
-    expect((screen.getByText("Regenerate") as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText(/could not be written at startup/)).toBeInTheDocument();
-    expect(screen.queryByText(/CCTRACE_API_TOKEN, so it cannot/)).toBeNull();
+    await screen.findByRole("table", { name: "Accepted clients" });
+
+    // Arming web-ui explains the consequence; arming tui replaces it.
+    fireEvent.click(screen.getByLabelText("Revoke web-ui"));
+    expect(screen.getByText(/locks every browser tab/)).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Revoke tui"));
+    expect(screen.getByLabelText("Revoke web-ui")).toHaveTextContent("Revoke");
+    expect(screen.getByLabelText("Revoke tui")).toHaveTextContent("Confirm revoke?");
+    expect(mockInvoke).not.toHaveBeenCalledWith("revoke_client", expect.anything());
+
+    fireEvent.click(screen.getByLabelText("Revoke tui"));
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("revoke_client", { id: TUI.id }));
+    await waitFor(() => expect(row("tui")).toHaveTextContent("Revoked"));
+    expect((screen.getByLabelText("Revoke tui") as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/"tui" revoked/)).toBeInTheDocument();
+  });
+
+  it("runs one client action at a time — a second Enter does not register twice", async () => {
+    let resolveRegister!: (v: unknown) => void;
+    const inFlight = new Promise((resolve) => {
+      resolveRegister = resolve;
+    });
+    useSettings(withClients("file"), { register_client: inFlight });
+    renderModal();
+    await screen.findByRole("table", { name: "Accepted clients" });
+
+    const input = screen.getByLabelText("New client name");
+    fireEvent.change(input, { target: { value: "twice" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.click(screen.getByLabelText("Reissue tui"));
+    fireEvent.click(screen.getByLabelText("Reissue tui")); // confirm while busy → ignored
+    expect(mockInvoke.mock.calls.filter(([c]) => c === "register_client")).toHaveLength(1);
+    expect(mockInvoke).not.toHaveBeenCalledWith("reissue_client", expect.anything());
+
+    resolveRegister({
+      client: { id: "5", name: "twice", builtin: false, created_at: 1, issued_at: 1 },
+      credential: "eyJ.twice.sig",
+    });
+    await screen.findByLabelText("New client credential");
+    expect(mockInvoke.mock.calls.filter(([c]) => c === "register_client")).toHaveLength(1);
+  });
+
+  it("shows the backend error when a client action fails", async () => {
+    useSettings(withClients("file"), {
+      register_client: new Error('a client named "tui" already exists'),
+    });
+    renderModal();
+    await screen.findByRole("table", { name: "Accepted clients" });
+    fireEvent.change(screen.getByLabelText("New client name"), { target: { value: "tui" } });
+    fireEvent.click(screen.getByText("Add client"));
+    await waitFor(() => expect(screen.getByText(/already exists/)).toBeInTheDocument());
+    expect(screen.queryByLabelText("New client credential")).toBeNull();
+  });
+
+  it("explains when the signing key could not be persisted", async () => {
+    useSettings(withClients("ephemeral"));
+    renderModal();
+    await screen.findByRole("table", { name: "Accepted clients" });
+    expect(screen.getByText(/signing key could not be written at startup/)).toBeInTheDocument();
   });
 
   it("shows only a hint when client verification is disabled", async () => {
-    useSettings(withToken("disabled", null));
+    useSettings(withClients("disabled", []));
     renderModal();
     await waitFor(() => expect(screen.getByText(/CCTRACE_API_AUTH=off/)).toBeInTheDocument());
-    expect(screen.queryByLabelText("API token")).toBeNull();
-    expect(screen.queryByText("Regenerate")).toBeNull();
+    expect(screen.queryByRole("table", { name: "Accepted clients" })).toBeNull();
+    expect(screen.queryByText("Add client")).toBeNull();
   });
 });

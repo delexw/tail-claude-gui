@@ -186,8 +186,8 @@ class CCTraceApp(App):
         self._start_sse()
 
     def _start_sse(self) -> None:
-        # `auth.auth_headers` is re-evaluated on every (re)connect so a token
-        # rotated from the Settings UI is picked up without restarting the TUI.
+        # `auth.auth_headers` is re-evaluated on every (re)connect so a credential
+        # reissued from the Settings UI is picked up without restarting the TUI.
         self._sse = SSEClient(f"{API_BASE}/api/events", headers=auth.auth_headers)
         self._sse.on("picker-refresh", self._on_picker_refresh)
         self._sse.on("session-update", self._on_session_update)
