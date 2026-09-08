@@ -99,6 +99,35 @@ test.describe("browser UI", () => {
     await expect(page.getByText(FIXTURE_REPLY)).toBeVisible();
   });
 
+  test("re-acquires the credential when the browser reloads a cached shell", async ({
+    page,
+    context,
+    baseURL,
+  }) => {
+    await page.goto("/");
+    await expect(page.getByText(FIXTURE_FIRST_MESSAGE)).toBeVisible();
+
+    // The cookie is session-scoped, so it dies when the browser closes while
+    // the cached HTML shell outlives it. Reproduce that pairing: drop the
+    // cookie, keep the cache, reload. The shell is served `no-cache` so the
+    // browser revalidates rather than reusing it blind, and the response —
+    // `304` included — carries the credential again.
+    await context.clearCookies();
+    expect(await context.cookies(baseURL!)).toHaveLength(0);
+    await page.reload();
+
+    const cookie = (await context.cookies(baseURL!)).find((c) => c.name === "cctrace_token");
+    expect(cookie?.value).toBe(readCredential(configDir, "web-ui"));
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByText(FIXTURE_FIRST_MESSAGE)).toBeVisible();
+  });
+
+  test("marks the shell no-cache so a cached copy can never starve a tab of its cookie", async () => {
+    const shell = await rawGet(port, "/", { Host: `localhost:${port}` });
+    expect(shell.status).toBe(200);
+    expect(shell.headers["cache-control"]).toBe("no-cache");
+  });
+
   test("live-tails the session over the cookie-authenticated SSE stream", async ({ page }) => {
     await page.goto("/");
     await page.getByText(FIXTURE_FIRST_MESSAGE).click();

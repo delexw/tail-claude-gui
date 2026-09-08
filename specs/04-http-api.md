@@ -542,7 +542,15 @@ rather than 401.
   the "Not an accepted client" banner clears itself once `web-ui` is (re)issued.
 - **Docker / same-origin** (`CCTRACE_STATIC_DIR` set): `auth::attach_credential_cookie` wraps the
   static fallback and adds `Set-Cookie: cctrace_token=<web-ui credential>; Path=/; HttpOnly;
-SameSite=Strict` to `text/html` responses — but **only when the request `Host` is allowlisted**:
+SameSite=Strict` to the HTML shell. The shell is a `text/html` response — or a `304 Not Modified`
+  for a shell path (`/`, any directory, `*.html`), which is headers-only and so has no
+  `Content-Type` to recognise it by. It also goes out `Cache-Control: no-cache`, because the
+  credential rides on it: a browser reusing a cached shell never asks the server anything, so it
+  never receives a cookie either, and the cookie is session-scoped — it dies with the browser while
+  the cached page outlives it, which left the UI on "Not an accepted client" until a hard reload.
+  `no-cache` still allows storing and revalidating, so the usual load stays a cheap `304` that now
+  carries the cookie. Assets never receive the cookie and stay cacheable. The cookie is issued
+  **only when the request `Host` is allowlisted**:
   `localhost`, `127.0.0.1`, `::1`, or the host part of any allowed CORS origin (defaults,
   `CCTRACE_ALLOWED_ORIGINS`, Settings UI). Without that gate a DNS-rebinding page pointed at the
   `0.0.0.0`-bound port would be issued the cookie and become a fully authenticated client. Reaching a
@@ -572,8 +580,8 @@ from the response; dev tabs get it again over HMR). The Tauri commands `list_cli
 
 Both deployment shapes are exercised end-to-end by the Playwright suite (`npm run test:e2e`,
 `playwright.config.ts`, `e2e/`): a real headless backend plus the real UI in Chromium, once served
-same-origin from a built bundle (cookie path, `Host` gate, live SSE, register/reissue/revoke, web-ui
-reissue and revoke) and once from the Vite dev server cross-origin (header + query carriers, plugin
+same-origin from a built bundle (cookie path, `Host` gate, `no-cache` shell, reload of a cached
+shell after the cookie is dropped, live SSE, register/reissue/revoke, web-ui reissue and revoke) and once from the Vite dev server cross-origin (header + query carriers, plugin
 serving the backend-written credential, HMR hot-swap on reissue from the tab and from another
 client). It runs against `CCTRACE_CONFIG_DIR=e2e/.tmp/...` and asserts every secret (`api-secret`,
 `clients.json`, `clients/*.jwt`) stayed on that path.

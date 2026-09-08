@@ -1546,6 +1546,66 @@ mod tests {
         assert_eq!(crate::jwt::verify(&web, KEY).unwrap().name, "web-ui");
     }
 
+    /// Any date the file cannot postdate, so `ServeDir` answers `304`.
+    const FAR_FUTURE: &str = "Wed, 21 Oct 2099 07:28:00 GMT";
+
+    #[tokio::test]
+    async fn static_index_is_marked_no_cache() {
+        let dir = static_dir();
+        let resp = static_router(enabled(), &dir)
+            .oneshot(get_with("/", &[("host", "localhost:1421")]))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        // The credential rides on the shell, so a browser must never serve it
+        // from cache without asking.
+        assert_eq!(
+            resp.headers().get(header::CACHE_CONTROL).unwrap(),
+            "no-cache"
+        );
+    }
+
+    #[tokio::test]
+    async fn revalidated_index_still_sets_web_ui_cookie() {
+        let dir = static_dir();
+        let state = test_state(enabled());
+        let web = state.app_state.web_ui_credential().unwrap();
+        let resp = build_router(state, Some(dir.path().to_string_lossy().to_string()))
+            .oneshot(get_with(
+                "/",
+                &[
+                    ("host", "localhost:1421"),
+                    ("if-modified-since", FAR_FUTURE),
+                ],
+            ))
+            .await
+            .unwrap();
+        // A `304` carries no `Content-Type`; the cookie must ride along anyway,
+        // or a browser with a cached shell is left with no credential.
+        assert_eq!(resp.status(), StatusCode::NOT_MODIFIED);
+        assert!(set_cookie(&resp)
+            .unwrap()
+            .starts_with(&format!("cctrace_token={web};")));
+    }
+
+    #[tokio::test]
+    async fn revalidated_asset_gets_no_cookie() {
+        let dir = static_dir();
+        let resp = static_router(enabled(), &dir)
+            .oneshot(get_with(
+                "/app.js",
+                &[
+                    ("host", "localhost:1421"),
+                    ("if-modified-since", FAR_FUTURE),
+                ],
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_MODIFIED);
+        assert!(set_cookie(&resp).is_none(), "assets never carry the cookie");
+        assert!(resp.headers().get(header::CACHE_CONTROL).is_none());
+    }
+
     #[tokio::test]
     async fn static_index_sets_no_cookie_for_unknown_host() {
         let dir = static_dir();

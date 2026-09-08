@@ -169,6 +169,17 @@ docker run --rm -p 9090:1421 \
 provide your own virtual display). Running the binary directly with
 `docker run --entrypoint /usr/local/bin/claude-code-trace ...` will fail.
 
+**"Not an accepted client" in the browser, but it works in a private window.**
+The credential cookie rides on the HTML shell, so a browser holding an older
+cached copy of that page never receives one. The shell is now served
+`Cache-Control: no-cache` to prevent this, but a copy cached before that
+change is still cached: reload once with `Cmd`/`Ctrl`+`Shift`+`R`. Confirm the
+server side with `curl -sI http://localhost:1421/ | grep -i set-cookie` — if
+that prints a `cctrace_token=...` line, the backend is issuing the cookie and
+the problem is on the browser's side. If it prints nothing, the request `Host`
+is not allowlisted (see [API access](#api-access-client-verification)) or
+`web-ui` has been revoked.
+
 **File watchers don't see changes.** On some Docker-for-Mac / WSL setups,
 `notify`-style filesystem watchers over bind mounts are unreliable. This
 affects the "live tailing" feature. A reload usually picks up new content;

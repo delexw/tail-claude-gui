@@ -661,24 +661,57 @@ fn is_html(resp: &Response) -> bool {
         .is_some_and(|ct| ct.starts_with("text/html"))
 }
 
+/// Does this request path resolve to the SPA shell? `/` and any other
+/// directory, which `ServeDir` answers with that directory's `index.html`,
+/// plus an explicit `.html` request. A `304` has no `Content-Type` to
+/// recognise the shell by (see [`is_shell_response`]), so its path is all we
+/// have.
+fn is_shell_path(path: &str) -> bool {
+    path.ends_with('/') || path.ends_with(".html")
+}
+
+/// Is this the SPA shell — the one response that carries the credential?
+///
+/// A `200` is identified by its content type. A `304 Not Modified` carries no
+/// body and no `Content-Type` (it is only headers), so a revalidated shell is
+/// identified by its request path instead. Missing this case is what made the
+/// UI break after the browser had cached `index.html`: the shell came back
+/// `304`, no `Set-Cookie` rode along, and — the cookie being session-scoped —
+/// the tab was left with no credential at all.
+fn is_shell_response(resp: &Response, shell_path: bool) -> bool {
+    is_html(resp) || (resp.status() == StatusCode::NOT_MODIFIED && shell_path)
+}
+
 /// axum middleware for the static-asset fallback: attach the `web-ui` client's
-/// credential as a cookie to HTML responses (the SPA shell) when the request
-/// `Host` is allowlisted, so the Docker same-origin UI authenticates with zero
-/// frontend code. No cookie when `web-ui` is revoked or verification is off.
+/// credential as a cookie to the SPA shell when the request `Host` is
+/// allowlisted, so the Docker same-origin UI authenticates with zero frontend
+/// code. No cookie when `web-ui` is revoked or verification is off.
+///
+/// The shell is also marked `no-cache`, because the credential rides on it: a
+/// browser that serves the shell straight out of its cache never asks the
+/// server anything, so it never receives a cookie either. `no-cache` still
+/// allows storing and revalidating (a `304` keeps the transfer cheap and now
+/// carries the cookie too) — it only forbids using the stored copy blind.
 pub async fn attach_credential_cookie(
     State(state): State<Arc<HttpState>>,
     req: Request,
     next: Next,
 ) -> Response {
-    // Only the HTML shell can receive the cookie, so defer the allowlist work
-    // until the response type is known — asset requests skip it entirely.
+    // Only the shell can receive the cookie, so defer the allowlist work until
+    // the response is known — asset requests skip it entirely.
     let host = req
         .headers()
         .get(header::HOST)
         .and_then(|h| h.to_str().ok())
         .map(str::to_owned);
+    let shell_path = is_shell_path(req.uri().path());
     let mut resp = next.run(req).await;
-    if is_html(&resp) && host.is_some_and(|h| host_allowed(&h, &allowed_origins(&state))) {
+    if !is_shell_response(&resp, shell_path) {
+        return resp;
+    }
+    resp.headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    if host.is_some_and(|h| host_allowed(&h, &allowed_origins(&state))) {
         if let Some(cookie) = state
             .app_state
             .web_ui_credential()
@@ -1030,6 +1063,16 @@ mod tests {
         assert!(!host_allowed("evil.example", &origins));
         assert!(!host_allowed("cctrace.example.com.evil.net", &origins));
         assert!(!host_allowed("", &origins));
+    }
+
+    #[test]
+    fn shell_paths_are_the_index_and_directories() {
+        assert!(is_shell_path("/"));
+        assert!(is_shell_path("/index.html"));
+        assert!(is_shell_path("/sub/"));
+        assert!(!is_shell_path("/app.js"));
+        assert!(!is_shell_path("/assets/index-a1b2c3.css"));
+        assert!(!is_shell_path("/favicon.ico"));
     }
 
     #[test]
