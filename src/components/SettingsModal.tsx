@@ -47,8 +47,13 @@ const WEB_UI_CLIENT = "web-ui";
 
 type PendingAction = { kind: "reissue" | "revoke"; id: string };
 
+/** Named month, so the result never reads as either day/month or month/day. */
 function formatDate(unixSeconds: number): string {
-  return new Date(unixSeconds * 1000).toLocaleDateString();
+  return new Date(unixSeconds * 1000).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 interface SettingsModalProps {
@@ -377,8 +382,8 @@ export function SettingsModal({
           Allowed Origins (CORS)
         </label>
         <p className="settings-modal__hint">
-          Extra origins allowed to call the local API (e.g. a reverse proxy or custom hostname), one
-          per line.
+          Browsers only. Add the origin of any page that calls the API from a different host or
+          port, such as a reverse proxy. Clients still need a token. One per line.
         </p>
         <textarea
           id="allowed-origins"
@@ -404,9 +409,10 @@ export function SettingsModal({
         ) : (
           <>
             <p className="settings-modal__hint">
-              Only registered clients can call the local HTTP API, each with its own signed
-              credential sent as an <code>X-CCTrace-Token</code> header. The bundled web UI and TUI
-              are registered automatically; add one for every script or tool you connect.
+              Every client needs its own signed token (a JWT) to call the local HTTP API. Send it as
+              an <code>Authorization: Bearer</code> or <code>X-CCTrace-Token</code> header. The
+              bundled web UI and TUI register themselves; add a client below for any script or tool
+              of your own.
             </p>
             {authSource === "ephemeral" && (
               <p className="settings-modal__hint settings-modal__hint--missing">
@@ -419,7 +425,7 @@ export function SettingsModal({
               <thead>
                 <tr>
                   <th>Client</th>
-                  <th>Since</th>
+                  <th>Issued</th>
                   <th>Status</th>
                   <th aria-label="Actions" />
                 </tr>

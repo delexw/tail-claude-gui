@@ -563,7 +563,7 @@ SameSite=Strict` to `text/html` responses — but **only when the request `Host`
 
 `GET /api/settings` reports `api_auth_enabled`, `api_auth_source` (`"file" | "ephemeral" |
 "disabled"`) and `clients`. The Settings modal's **Accepted clients** section lists them (name,
-built-in badge, since, Active/Revoked) with **Reissue** and **Revoke** per row — both two-click
+built-in badge, issued date, Active/Revoked) with **Reissue** and **Revoke** per row — both two-click
 confirms; arming Revoke on `web-ui` from a browser warns that it locks this UI out — and an **Add
 client** row that shows the new credential once with Copy. Reissuing `web-ui` from a browser keeps
 that tab working: it swaps the live credential in memory (same-origin tabs also get the new cookie

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { SettingsModal } from "./SettingsModal";
 
 const mockInvoke = vi.fn();
@@ -459,6 +459,23 @@ describe("SettingsModal", () => {
     expect((screen.getByLabelText("Reissue ci-script") as HTMLButtonElement).disabled).toBe(false);
     // Credentials are never part of the listing.
     expect(screen.queryByLabelText("New client credential")).toBeNull();
+  });
+
+  it("names both token carriers and dates each client unambiguously", async () => {
+    useSettings(withClients("file"));
+    renderModal();
+    const table = await screen.findByRole("table", { name: "Accepted clients" });
+    // `Authorization: Bearer` is accepted just as much as the custom header
+    // (see `presented_credentials` in auth.rs); naming only one sends people
+    // down a single path and hides the other.
+    expect(screen.getByText("Authorization: Bearer")).toBeInTheDocument();
+    expect(screen.getByText("X-CCTrace-Token")).toBeInTheDocument();
+    expect(within(table).getByRole("columnheader", { name: "Issued" })).toBeInTheDocument();
+    // A named month: "08/09/2026" reads as two different dates depending on
+    // the reader's locale.
+    const date = within(row("web-ui")).getAllByRole("cell")[1].textContent ?? "";
+    expect(date).toMatch(/[A-Za-z]{3}/);
+    expect(date).toMatch(/\d{4}/);
   });
 
   it("registers a client and shows its credential exactly once", async () => {
